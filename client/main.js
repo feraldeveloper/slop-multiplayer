@@ -1,4 +1,5 @@
 import {
+  BULLET_RADIUS,
   MAX_HEALTH,
   MAX_STAMINA,
   PLAYER_COLLIDER_RADIUS,
@@ -22,6 +23,7 @@ import { createRoom, connectToRoom } from "./net.js";
 const windowEl = document.querySelector(".window");
 const sceneEl = document.querySelector("#scene");
 const circlesLayerEl = document.querySelector("#circles-layer");
+const bulletsLayerEl = document.querySelector("#bullets-layer");
 const playersLayerEl = document.querySelector("#players-layer");
 const shipColliderEl = document.querySelector("#ship-collider");
 const statsEl = document.querySelector("#stats");
@@ -50,6 +52,7 @@ const hudModeEl = document.querySelector("#hud-mode");
 
 const playerViews = new Map();
 const circleViews = new Map();
+const bulletViews = new Map();
 
 const config = {
   apiBaseUrl: "",
@@ -94,8 +97,10 @@ const runtime = {
     brakePressNonce: 0,
     brakeReleaseNonce: 0,
     dashNonce: 0,
+    fireNonce: 0,
   },
   isRightMouseDown: false,
+  isDashMouseDown: false,
   isBrakeHeld: false,
   nextInputSeq: 1,
   inputDirty: false,
@@ -158,6 +163,7 @@ function pushSnapshot(snapshot, time = performance.now()) {
 function interpolateSnapshots(previousSnapshot, nextSnapshot, alpha) {
   const previousPlayers = new Map(previousSnapshot.players.map((player) => [player.id, player]));
   const previousCircles = new Map(previousSnapshot.circles.map((circle) => [circle.id, circle]));
+  const previousBullets = new Map((previousSnapshot.bullets || []).map((bullet) => [bullet.id, bullet]));
 
   return {
     ...nextSnapshot,
@@ -184,6 +190,18 @@ function interpolateSnapshots(previousSnapshot, nextSnapshot, alpha) {
         ...circle,
         x: lerp(previous.x, circle.x, alpha),
         y: lerp(previous.y, circle.y, alpha),
+      };
+    }),
+    bullets: (nextSnapshot.bullets || []).map((bullet) => {
+      const previous = previousBullets.get(bullet.id);
+      if (!previous) {
+        return bullet;
+      }
+
+      return {
+        ...bullet,
+        x: lerp(previous.x, bullet.x, alpha),
+        y: lerp(previous.y, bullet.y, alpha),
       };
     }),
   };
@@ -282,9 +300,25 @@ function getOrCreateCircleView(circleId, radius) {
   return element;
 }
 
+function getOrCreateBulletView(bulletId, radius = BULLET_RADIUS) {
+  if (!bulletViews.has(bulletId)) {
+    const element = document.createElement("div");
+    element.className = "bullet";
+    bulletsLayerEl.appendChild(element);
+    bulletViews.set(bulletId, element);
+  }
+
+  const element = bulletViews.get(bulletId);
+  const diameter = radius * 2;
+  element.style.width = `${diameter}px`;
+  element.style.height = `${diameter}px`;
+  return element;
+}
+
 function syncEntityViews(snapshot) {
   const activePlayerIds = new Set();
   const activeCircleIds = new Set();
+  const activeBulletIds = new Set();
 
   for (const player of snapshot.players) {
     activePlayerIds.add(player.id);
@@ -314,6 +348,19 @@ function syncEntityViews(snapshot) {
       circleViews.delete(circleId);
     }
   }
+
+  for (const bullet of snapshot.bullets || []) {
+    activeBulletIds.add(bullet.id);
+    const element = getOrCreateBulletView(bullet.id, bullet.radius);
+    element.style.transform = `translate(${bullet.x - bullet.radius}px, ${bullet.y - bullet.radius}px)`;
+  }
+
+  for (const [bulletId, element] of bulletViews.entries()) {
+    if (!activeBulletIds.has(bulletId)) {
+      element.remove();
+      bulletViews.delete(bulletId);
+    }
+  }
 }
 
 function updateStats(snapshot) {
@@ -329,6 +376,7 @@ function updateStats(snapshot) {
     `|v| ${speed.toFixed(2)}`,
     `players ${snapshot?.players.length ?? 0}`,
     `circles ${snapshot?.circles.length ?? 0}`,
+    `bullets ${snapshot?.bullets?.length ?? 0}`,
   ].filter(Boolean);
 
   statsEl.textContent = lines.join("\n");
@@ -548,10 +596,11 @@ async function initializeOnlineMode() {
         tick: 0,
         tickRate: message.tickRate,
         world: message.world,
-        settings: message.settings,
-        players: [],
-        circles: [],
-      }, performance.now());
+          settings: message.settings,
+          players: [],
+          circles: [],
+          bullets: [],
+        }, performance.now());
     },
     onState: (message) => {
       pushSnapshot(message, performance.now());
@@ -647,6 +696,13 @@ function handleInputEvents() {
       return;
     }
 
+    if (event.code === "KeyX" && !event.repeat) {
+      runtime.input.fireNonce += 1;
+      markInputDirty();
+      event.preventDefault();
+      return;
+    }
+
     if (event.code === "KeyZ" && !runtime.isBrakeHeld) {
       runtime.isBrakeHeld = true;
       runtime.input.brakePressNonce += 1;
@@ -681,15 +737,23 @@ function handleInputEvents() {
       return;
     }
 
-    if (event.button === 0 && runtime.isRightMouseDown) {
+    if (event.button === 0 && runtime.isRightMouseDown && !runtime.isDashMouseDown) {
+      runtime.isDashMouseDown = true;
       updatePointer(event.clientX, event.clientY);
-      runtime.input.dashNonce += 1;
-      markInputDirty();
       event.preventDefault();
     }
   });
 
   window.addEventListener("mouseup", (event) => {
+    if (event.button === 0 && runtime.isDashMouseDown) {
+      runtime.isDashMouseDown = false;
+      if (runtime.isRightMouseDown) {
+        updatePointer(event.clientX, event.clientY);
+        runtime.input.dashNonce += 1;
+        markInputDirty();
+      }
+    }
+
     if (event.button === 2 && runtime.isRightMouseDown) {
       runtime.isRightMouseDown = false;
       runtime.input.followReleaseNonce += 1;
@@ -698,12 +762,16 @@ function handleInputEvents() {
   });
 
   window.addEventListener("blur", () => {
-    if (runtime.isRightMouseDown) {
-      runtime.isRightMouseDown = false;
-      runtime.input.followReleaseNonce += 1;
-    }
+  if (runtime.isRightMouseDown) {
+    runtime.isRightMouseDown = false;
+    runtime.input.followReleaseNonce += 1;
+  }
 
-    if (runtime.isBrakeHeld) {
+  if (runtime.isDashMouseDown) {
+    runtime.isDashMouseDown = false;
+  }
+
+  if (runtime.isBrakeHeld) {
       runtime.isBrakeHeld = false;
       runtime.input.brakeReleaseNonce += 1;
     }

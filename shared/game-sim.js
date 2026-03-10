@@ -1,4 +1,7 @@
 import {
+  BULLET_RADIUS,
+  BULLET_SPAWN_DISTANCE,
+  BULLET_SPEED_PER_SECOND,
   BRAKE_FACTOR,
   BRAKE_STAMINA_DRAIN_PER_SECOND,
   CIRCLE_FALL_SPEED_PER_SECOND,
@@ -16,6 +19,7 @@ import {
   DASH_DURATION_SECONDS,
   DEFAULT_SIMULATION_SETTINGS,
   DEFAULT_TICK_RATE,
+  FIRE_COST,
   HEALTH_REGEN_DELAY_AFTER_DAMAGE,
   HEALTH_REGEN_PER_SECOND,
   HEALTH_REGEN_STAMINA_COST_PER_SECOND,
@@ -70,6 +74,7 @@ function createDefaultInput() {
     brakePressNonce: 0,
     brakeReleaseNonce: 0,
     dashNonce: 0,
+    fireNonce: 0,
   };
 }
 
@@ -276,6 +281,33 @@ function tryStartDash(state, player) {
   player.dashVelocityY = player.facingY * (state.settings.dashSpeed / state.tickRate);
   player.postDashVelocityX = player.facingX * (state.settings.postDashSpeed / state.tickRate);
   player.postDashVelocityY = player.facingY * (state.settings.postDashSpeed / state.tickRate);
+}
+
+function tryFireBullet(state, player) {
+  if (player.input.fireNonce <= player.lastConsumedFireNonce) {
+    return;
+  }
+
+  player.lastConsumedFireNonce = player.input.fireNonce;
+
+  if (player.stamina < FIRE_COST) {
+    return;
+  }
+
+  player.stamina = Math.max(0, player.stamina - FIRE_COST);
+
+  const directionX = Math.cos(player.angle);
+  const directionY = Math.sin(player.angle);
+  state.bullets.push({
+    id: state.nextBulletId,
+    ownerId: player.id,
+    x: player.x + directionX * BULLET_SPAWN_DISTANCE,
+    y: player.y + directionY * BULLET_SPAWN_DISTANCE,
+    vx: player.vx + directionX * (BULLET_SPEED_PER_SECOND / state.tickRate),
+    vy: player.vy + directionY * (BULLET_SPEED_PER_SECOND / state.tickRate),
+    radius: BULLET_RADIUS,
+  });
+  state.nextBulletId += 1;
 }
 
 function updatePlayerMotion(state, player) {
@@ -618,6 +650,22 @@ function spawnCircles(state) {
   }
 }
 
+function updateBullets(state) {
+  for (const bullet of state.bullets.slice()) {
+    bullet.x += bullet.vx;
+    bullet.y += bullet.vy;
+
+    if (
+      bullet.y + bullet.radius < -OFFSCREEN_DESPAWN_MARGIN ||
+      bullet.y - bullet.radius > state.world.height + OFFSCREEN_DESPAWN_MARGIN ||
+      bullet.x + bullet.radius < -OFFSCREEN_DESPAWN_MARGIN ||
+      bullet.x - bullet.radius > state.world.width + OFFSCREEN_DESPAWN_MARGIN
+    ) {
+      state.bullets.splice(state.bullets.indexOf(bullet), 1);
+    }
+  }
+}
+
 export function createSimulationSettings(overrides = {}) {
   return {
     ...DEFAULT_SIMULATION_SETTINGS,
@@ -638,7 +686,9 @@ export function createGameState(options = {}) {
     settings: createSimulationSettings(options.settings),
     players: new Map(),
     circles: [],
+    bullets: [],
     nextCircleId: 1,
+    nextBulletId: 1,
     circleSpawnTimer: nextCircleSpawnDelay(),
   };
 }
@@ -690,6 +740,7 @@ export function addPlayer(state, { id, name, joinedAt = Date.now() }) {
     lastConsumedFollowReleaseNonce: 0,
     lastConsumedBrakePressNonce: 0,
     lastConsumedBrakeReleaseNonce: 0,
+    lastConsumedFireNonce: 0,
   };
 
   player.input.pointerX = spawn.x;
@@ -725,6 +776,7 @@ export function updatePlayerInput(state, playerId, input = {}, seq) {
   player.input.brakePressNonce = Math.max(player.input.brakePressNonce, Math.floor(toFiniteNumber(input.brakePressNonce, player.input.brakePressNonce)));
   player.input.brakeReleaseNonce = Math.max(player.input.brakeReleaseNonce, Math.floor(toFiniteNumber(input.brakeReleaseNonce, player.input.brakeReleaseNonce)));
   player.input.dashNonce = Math.max(player.input.dashNonce, Math.floor(toFiniteNumber(input.dashNonce, player.input.dashNonce)));
+  player.input.fireNonce = Math.max(player.input.fireNonce, Math.floor(toFiniteNumber(input.fireNonce, player.input.fireNonce)));
 
   if (Number.isFinite(seq)) {
     player.lastInputSeq = Number(seq);
@@ -742,12 +794,14 @@ export function tickGame(state) {
     updateResources(state, player);
     updateRotation(state, player);
     tryStartDash(state, player);
+    tryFireBullet(state, player);
     updatePlayerMotion(state, player);
     applyControlReleases(player);
   }
 
   spawnCircles(state);
   updateCircles(state);
+  updateBullets(state);
   resolvePlayerCollisions(state);
   resolveCircleCollisions(state);
 }
@@ -782,6 +836,15 @@ export function createSnapshot(state) {
       vx: circle.vx,
       vy: circle.vy,
       radius: circle.radius,
+    })),
+    bullets: state.bullets.map((bullet) => ({
+      id: bullet.id,
+      ownerId: bullet.ownerId,
+      x: bullet.x,
+      y: bullet.y,
+      vx: bullet.vx,
+      vy: bullet.vy,
+      radius: bullet.radius,
     })),
   };
 }

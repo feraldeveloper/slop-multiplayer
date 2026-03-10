@@ -9,6 +9,9 @@
     const PLAYER_SPRITE_ANGLE_OFFSET = Math.PI / 2;
     const PLAYER_MAX_SPEED_PER_SECOND = 2000;
     const PLAYER_THRUST_STEER_LERP = 0.08;
+    const BULLET_SPEED_PER_SECOND = 2500;
+    const BULLET_SPAWN_DISTANCE = 150;
+    const BULLET_RADIUS = 6;
     const MAX_HEALTH = 20;
     const HEALTH_REGEN_PER_SECOND = 2;
     const HEALTH_REGEN_STAMINA_COST_PER_SECOND = 4;
@@ -16,6 +19,7 @@
     const MAX_STAMINA = 12;
     const DASH_COST = 4;
     const DASH_DURATION_SECONDS = 0.25;
+    const FIRE_COST = 0.5;
     const STAMINA_REGEN_PER_SECOND = 2;
     const BRAKE_STAMINA_DRAIN_PER_SECOND = 1;
     const STAMINA_REGEN_DELAY_AFTER_BRAKE = 3;
@@ -53,6 +57,9 @@
       PLAYER_SPRITE_ANGLE_OFFSET,
       PLAYER_MAX_SPEED_PER_SECOND,
       PLAYER_THRUST_STEER_LERP,
+      BULLET_SPEED_PER_SECOND,
+      BULLET_SPAWN_DISTANCE,
+      BULLET_RADIUS,
       MAX_HEALTH,
       HEALTH_REGEN_PER_SECOND,
       HEALTH_REGEN_STAMINA_COST_PER_SECOND,
@@ -60,6 +67,7 @@
       MAX_STAMINA,
       DASH_COST,
       DASH_DURATION_SECONDS,
+      FIRE_COST,
       STAMINA_REGEN_PER_SECOND,
       BRAKE_STAMINA_DRAIN_PER_SECOND,
       STAMINA_REGEN_DELAY_AFTER_BRAKE,
@@ -225,6 +233,9 @@
 
   const GameSim = (() => {
     const {
+      BULLET_RADIUS,
+      BULLET_SPAWN_DISTANCE,
+      BULLET_SPEED_PER_SECOND,
       BRAKE_FACTOR,
       BRAKE_STAMINA_DRAIN_PER_SECOND,
       CIRCLE_FALL_SPEED_PER_SECOND,
@@ -242,6 +253,7 @@
       DASH_DURATION_SECONDS,
       DEFAULT_SIMULATION_SETTINGS,
       DEFAULT_TICK_RATE,
+      FIRE_COST,
       HEALTH_REGEN_DELAY_AFTER_DAMAGE,
       HEALTH_REGEN_PER_SECOND,
       HEALTH_REGEN_STAMINA_COST_PER_SECOND,
@@ -296,6 +308,7 @@
         brakePressNonce: 0,
         brakeReleaseNonce: 0,
         dashNonce: 0,
+        fireNonce: 0,
       };
     }
 
@@ -502,6 +515,33 @@
       player.dashVelocityY = player.facingY * (state.settings.dashSpeed / state.tickRate);
       player.postDashVelocityX = player.facingX * (state.settings.postDashSpeed / state.tickRate);
       player.postDashVelocityY = player.facingY * (state.settings.postDashSpeed / state.tickRate);
+    }
+
+    function tryFireBullet(state, player) {
+      if (player.input.fireNonce <= player.lastConsumedFireNonce) {
+        return;
+      }
+
+      player.lastConsumedFireNonce = player.input.fireNonce;
+
+      if (player.stamina < FIRE_COST) {
+        return;
+      }
+
+      player.stamina = Math.max(0, player.stamina - FIRE_COST);
+
+      const directionX = Math.cos(player.angle);
+      const directionY = Math.sin(player.angle);
+      state.bullets.push({
+        id: state.nextBulletId,
+        ownerId: player.id,
+        x: player.x + directionX * BULLET_SPAWN_DISTANCE,
+        y: player.y + directionY * BULLET_SPAWN_DISTANCE,
+        vx: player.vx + directionX * (BULLET_SPEED_PER_SECOND / state.tickRate),
+        vy: player.vy + directionY * (BULLET_SPEED_PER_SECOND / state.tickRate),
+        radius: BULLET_RADIUS,
+      });
+      state.nextBulletId += 1;
     }
 
     function updatePlayerMotion(state, player) {
@@ -844,6 +884,22 @@
       }
     }
 
+    function updateBullets(state) {
+      for (const bullet of state.bullets.slice()) {
+        bullet.x += bullet.vx;
+        bullet.y += bullet.vy;
+
+        if (
+          bullet.y + bullet.radius < -OFFSCREEN_DESPAWN_MARGIN ||
+          bullet.y - bullet.radius > state.world.height + OFFSCREEN_DESPAWN_MARGIN ||
+          bullet.x + bullet.radius < -OFFSCREEN_DESPAWN_MARGIN ||
+          bullet.x - bullet.radius > state.world.width + OFFSCREEN_DESPAWN_MARGIN
+        ) {
+          state.bullets.splice(state.bullets.indexOf(bullet), 1);
+        }
+      }
+    }
+
     function createSimulationSettings(overrides = {}) {
       return {
         ...DEFAULT_SIMULATION_SETTINGS,
@@ -864,7 +920,9 @@
         settings: createSimulationSettings(options.settings),
         players: new Map(),
         circles: [],
+        bullets: [],
         nextCircleId: 1,
+        nextBulletId: 1,
         circleSpawnTimer: nextCircleSpawnDelay(),
       };
     }
@@ -916,6 +974,7 @@
         lastConsumedFollowReleaseNonce: 0,
         lastConsumedBrakePressNonce: 0,
         lastConsumedBrakeReleaseNonce: 0,
+        lastConsumedFireNonce: 0,
       };
 
       player.input.pointerX = spawn.x;
@@ -937,6 +996,7 @@
       player.input.brakePressNonce = Math.max(player.input.brakePressNonce, Math.floor(toFiniteNumber(input.brakePressNonce, player.input.brakePressNonce)));
       player.input.brakeReleaseNonce = Math.max(player.input.brakeReleaseNonce, Math.floor(toFiniteNumber(input.brakeReleaseNonce, player.input.brakeReleaseNonce)));
       player.input.dashNonce = Math.max(player.input.dashNonce, Math.floor(toFiniteNumber(input.dashNonce, player.input.dashNonce)));
+      player.input.fireNonce = Math.max(player.input.fireNonce, Math.floor(toFiniteNumber(input.fireNonce, player.input.fireNonce)));
 
       if (Number.isFinite(seq)) {
         player.lastInputSeq = Number(seq);
@@ -954,12 +1014,14 @@
         updateResources(state, player);
         updateRotation(state, player);
         tryStartDash(state, player);
+        tryFireBullet(state, player);
         updatePlayerMotion(state, player);
         applyControlReleases(player);
       }
 
       spawnCircles(state);
       updateCircles(state);
+      updateBullets(state);
       resolvePlayerCollisions(state);
       resolveCircleCollisions(state);
     }
@@ -994,6 +1056,15 @@
           vx: circle.vx,
           vy: circle.vy,
           radius: circle.radius,
+        })),
+        bullets: state.bullets.map((bullet) => ({
+          id: bullet.id,
+          ownerId: bullet.ownerId,
+          x: bullet.x,
+          y: bullet.y,
+          vx: bullet.vx,
+          vy: bullet.vy,
+          radius: bullet.radius,
         })),
       };
     }
@@ -1036,6 +1107,7 @@
   const windowEl = document.querySelector(".window");
   const sceneEl = document.querySelector("#scene");
   const circlesLayerEl = document.querySelector("#circles-layer");
+  const bulletsLayerEl = document.querySelector("#bullets-layer");
   const playersLayerEl = document.querySelector("#players-layer");
   const shipColliderEl = document.querySelector("#ship-collider");
   const statsEl = document.querySelector("#stats");
@@ -1062,6 +1134,7 @@
 
   const playerViews = new Map();
   const circleViews = new Map();
+  const bulletViews = new Map();
 
   const config = {
     apiBaseUrl: "",
@@ -1106,8 +1179,10 @@
       brakePressNonce: 0,
       brakeReleaseNonce: 0,
       dashNonce: 0,
+      fireNonce: 0,
     },
     isRightMouseDown: false,
+    isDashMouseDown: false,
     isBrakeHeld: false,
     nextInputSeq: 1,
     inputDirty: false,
@@ -1170,6 +1245,7 @@
   function interpolateSnapshots(previousSnapshot, nextSnapshot, alpha) {
     const previousPlayers = new Map(previousSnapshot.players.map((player) => [player.id, player]));
     const previousCircles = new Map(previousSnapshot.circles.map((circle) => [circle.id, circle]));
+    const previousBullets = new Map((previousSnapshot.bullets || []).map((bullet) => [bullet.id, bullet]));
 
     return {
       ...nextSnapshot,
@@ -1196,6 +1272,18 @@
           ...circle,
           x: lerp(previous.x, circle.x, alpha),
           y: lerp(previous.y, circle.y, alpha),
+        };
+      }),
+      bullets: (nextSnapshot.bullets || []).map((bullet) => {
+        const previous = previousBullets.get(bullet.id);
+        if (!previous) {
+          return bullet;
+        }
+
+        return {
+          ...bullet,
+          x: lerp(previous.x, bullet.x, alpha),
+          y: lerp(previous.y, bullet.y, alpha),
         };
       }),
     };
@@ -1294,9 +1382,25 @@
     return element;
   }
 
+  function getOrCreateBulletView(bulletId, radius = BULLET_RADIUS) {
+    if (!bulletViews.has(bulletId)) {
+      const element = document.createElement("div");
+      element.className = "bullet";
+      bulletsLayerEl.appendChild(element);
+      bulletViews.set(bulletId, element);
+    }
+
+    const element = bulletViews.get(bulletId);
+    const diameter = radius * 2;
+    element.style.width = `${diameter}px`;
+    element.style.height = `${diameter}px`;
+    return element;
+  }
+
   function syncEntityViews(snapshot) {
     const activePlayerIds = new Set();
     const activeCircleIds = new Set();
+    const activeBulletIds = new Set();
 
     for (const player of snapshot.players) {
       activePlayerIds.add(player.id);
@@ -1326,6 +1430,19 @@
         circleViews.delete(circleId);
       }
     }
+
+    for (const bullet of snapshot.bullets || []) {
+      activeBulletIds.add(bullet.id);
+      const element = getOrCreateBulletView(bullet.id, bullet.radius);
+      element.style.transform = `translate(${bullet.x - bullet.radius}px, ${bullet.y - bullet.radius}px)`;
+    }
+
+    for (const [bulletId, element] of bulletViews.entries()) {
+      if (!activeBulletIds.has(bulletId)) {
+        element.remove();
+        bulletViews.delete(bulletId);
+      }
+    }
   }
 
   function updateStats(snapshot) {
@@ -1341,6 +1458,7 @@
       `|v| ${speed.toFixed(2)}`,
       `players ${snapshot?.players.length ?? 0}`,
       `circles ${snapshot?.circles.length ?? 0}`,
+      `bullets ${snapshot?.bullets?.length ?? 0}`,
     ].filter(Boolean);
 
     statsEl.textContent = lines.join("\n");
@@ -1563,6 +1681,7 @@
           settings: message.settings,
           players: [],
           circles: [],
+          bullets: [],
         }, performance.now());
       },
       onState: (message) => {
@@ -1659,6 +1778,13 @@
         return;
       }
 
+      if (event.code === "KeyX" && !event.repeat) {
+        runtime.input.fireNonce += 1;
+        markInputDirty();
+        event.preventDefault();
+        return;
+      }
+
       if (event.code === "KeyZ" && !runtime.isBrakeHeld) {
         runtime.isBrakeHeld = true;
         runtime.input.brakePressNonce += 1;
@@ -1693,15 +1819,23 @@
         return;
       }
 
-      if (event.button === 0 && runtime.isRightMouseDown) {
+      if (event.button === 0 && runtime.isRightMouseDown && !runtime.isDashMouseDown) {
+        runtime.isDashMouseDown = true;
         updatePointer(event.clientX, event.clientY);
-        runtime.input.dashNonce += 1;
-        markInputDirty();
         event.preventDefault();
       }
     });
 
     window.addEventListener("mouseup", (event) => {
+      if (event.button === 0 && runtime.isDashMouseDown) {
+        runtime.isDashMouseDown = false;
+        if (runtime.isRightMouseDown) {
+          updatePointer(event.clientX, event.clientY);
+          runtime.input.dashNonce += 1;
+          markInputDirty();
+        }
+      }
+
       if (event.button === 2 && runtime.isRightMouseDown) {
         runtime.isRightMouseDown = false;
         runtime.input.followReleaseNonce += 1;
@@ -1710,12 +1844,16 @@
     });
 
     window.addEventListener("blur", () => {
-      if (runtime.isRightMouseDown) {
-        runtime.isRightMouseDown = false;
-        runtime.input.followReleaseNonce += 1;
-      }
+    if (runtime.isRightMouseDown) {
+      runtime.isRightMouseDown = false;
+      runtime.input.followReleaseNonce += 1;
+    }
 
-      if (runtime.isBrakeHeld) {
+    if (runtime.isDashMouseDown) {
+      runtime.isDashMouseDown = false;
+    }
+
+    if (runtime.isBrakeHeld) {
         runtime.isBrakeHeld = false;
         runtime.input.brakeReleaseNonce += 1;
       }

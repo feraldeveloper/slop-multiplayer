@@ -17,6 +17,7 @@ export const HEALTH_REGEN_DELAY_AFTER_DAMAGE = 3;
 export const MAX_STAMINA = 12;
 export const DASH_COST = 4;
 export const DASH_DURATION_SECONDS = 0.25;
+export const FIRE_COST = 0.5;
 export const STAMINA_REGEN_PER_SECOND = 2;
 export const BRAKE_STAMINA_DRAIN_PER_SECOND = 1;
 export const STAMINA_REGEN_DELAY_AFTER_BRAKE = 3;
@@ -47,3 +48,6 @@ export const COLLISION_FRICTION = 0.08;
 
 export const OFFSCREEN_DESPAWN_MARGIN = 160;
 export const PLAYER_SLEEP_SPEED_PER_TICK = 0.05;
+export const BULLET_SPEED_PER_SECOND = 2500;
+export const BULLET_SPAWN_DISTANCE = 150;
+export const BULLET_RADIUS = 6;

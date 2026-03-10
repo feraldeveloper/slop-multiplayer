@@ -194,6 +194,18 @@
       z-index: 2;
     }
 
+    .bullet {
+      position: absolute;
+      left: 0;
+      top: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fff9cf 0%, #ffd65f 55%, #ff8c00 100%);
+      box-shadow: 0 0 10px rgba(255, 214, 95, 0.8);
+      will-change: transform;
+      pointer-events: none;
+      z-index: 2;
+    }
+
     .ship-collider {
       position: absolute;
       left: 0;
@@ -303,6 +315,7 @@
     <div class="scene" id="scene">
       <div class="entities">
         <div class="layer" id="circles-layer"></div>
+        <div class="layer" id="bullets-layer"></div>
         <div class="layer" id="players-layer"></div>
         <div class="ship-collider" id="ship-collider"></div>
       </div>
@@ -310,7 +323,7 @@
     <div class="stats" id="stats" aria-live="off"></div>
   </main>
 
-  <script src="./client-config.js?v=20260310c"></script>
-  <script src="./client/bootstrap.js?v=20260310c"></script>
+  <script src="./client-config.js?v=20260310d"></script>
+  <script src="./client/bootstrap.js?v=20260310d"></script>
 </body>
 </html>
