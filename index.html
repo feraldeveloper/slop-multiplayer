@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Navy Window</title>
+  <style>
+    :root {
+      --bg: #071a3d;
+      --bezel: #1f2430;
+      --window: #000000;
+      --shadow: rgba(0, 0, 0, 0.35);
+      --gap: 40px;
+      --radius: 32px;
+      --player-size: 112px;
+      --panel-bg: rgba(255, 255, 255, 0.1);
+      --panel-border: rgba(255, 255, 255, 0.18);
+      --panel-text: #eef3ff;
+      --stamina-fill: #74f0b8;
+      --stamina-track: rgba(255, 255, 255, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #102a5f 0%, var(--bg) 55%);
+      overflow: hidden;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+    }
+
+    .hud,
+    .stamina {
+      position: fixed;
+      z-index: 10;
+      padding: 12px 14px;
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      background: var(--panel-bg);
+      backdrop-filter: blur(10px);
+      color: var(--panel-text);
+    }
+
+    .hud {
+      top: 20px;
+      right: 20px;
+      width: min(280px, calc(100vw - 40px));
+    }
+
+    .hud.is-hidden {
+      display: none;
+    }
+
+    .hud__mode {
+      margin-bottom: 12px;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      opacity: 0.85;
+      text-transform: uppercase;
+    }
+
+    .stamina {
+      top: 20px;
+      left: 20px;
+      width: min(260px, calc(100vw - 40px));
+    }
+
+    .stamina__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.95rem;
+      letter-spacing: 0.03em;
+    }
+
+    .stamina__bar {
+      margin-top: 10px;
+      height: 14px;
+      border-radius: 999px;
+      background: var(--stamina-track);
+      overflow: hidden;
+    }
+
+    .stamina__fill {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, #4fd79f 0%, var(--stamina-fill) 100%);
+      transform-origin: left center;
+    }
+
+    .control + .control {
+      margin-top: 12px;
+    }
+
+    .control label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.95rem;
+      letter-spacing: 0.03em;
+    }
+
+    .control input {
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .control input:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .window {
+      position: relative;
+      width: calc(100vw - (var(--gap) * 2));
+      height: calc(100vh - (var(--gap) * 2));
+      margin: var(--gap);
+      border: 10px solid var(--bezel);
+      border-radius: var(--radius);
+      background: var(--window);
+      box-shadow: 0 30px 80px var(--shadow);
+      overflow: hidden;
+      cursor: crosshair;
+    }
+
+    .scene {
+      position: absolute;
+      left: 0;
+      top: 0;
+      transform-origin: top left;
+      pointer-events: none;
+    }
+
+    .entities,
+    .layer {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    .player {
+      position: absolute;
+      width: var(--player-size);
+      height: var(--player-size);
+      left: 0;
+      top: 0;
+      object-fit: contain;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      will-change: transform;
+      transform-origin: center center;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
+      z-index: 3;
+    }
+
+    .player--local {
+      filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.16));
+      z-index: 4;
+    }
+
+    .circle {
+      position: absolute;
+      left: 0;
+      top: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #d9f7ff 0%, #7db7d5 35%, #265a78 100%);
+      box-shadow: inset -8px -12px 18px rgba(0, 0, 0, 0.28);
+      will-change: transform;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .ship-collider {
+      position: absolute;
+      left: 0;
+      top: 0;
+      border: 2px dashed rgba(255, 120, 120, 0.95);
+      border-radius: 50%;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 120ms linear;
+      z-index: 5;
+    }
+
+    .ship-collider.is-visible {
+      opacity: 1;
+    }
+
+    .stats {
+      position: absolute;
+      right: 18px;
+      bottom: 14px;
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 0.9rem;
+      letter-spacing: 0.04em;
+      text-align: right;
+      white-space: pre-line;
+      pointer-events: none;
+      z-index: 6;
+    }
+  </style>
+</head>
+<body>
+  <aside class="stamina">
+    <div class="stamina__head">
+      <span>Stamina</span>
+      <span id="stamina-value">12.00 / 12.00</span>
+    </div>
+    <div class="stamina__bar">
+      <div class="stamina__fill" id="stamina-fill"></div>
+    </div>
+  </aside>
+
+  <aside class="hud is-hidden" id="hud">
+    <div class="hud__mode" id="hud-mode">Local Simulation</div>
+    <div class="control">
+      <label for="tps-slider">
+        <span>Tick Rate</span>
+        <span id="tps-value">20 TPS</span>
+      </label>
+      <input id="tps-slider" type="range" min="1" max="120" value="20" />
+    </div>
+    <div class="control">
+      <label for="acceleration-slider">
+        <span>Acceleration</span>
+        <span id="acceleration-value">3.00</span>
+      </label>
+      <input id="acceleration-slider" type="range" min="0" max="20" step="0.1" value="3" />
+    </div>
+    <div class="control">
+      <label for="damping-slider">
+        <span>Damping</span>
+        <span id="damping-value">1.00</span>
+      </label>
+      <input id="damping-slider" type="range" min="0.50" max="1.00" step="0.01" value="1.00" />
+    </div>
+    <div class="control">
+      <label for="slow-radius-slider">
+        <span>Slow Radius</span>
+        <span id="slow-radius-value">220</span>
+      </label>
+      <input id="slow-radius-slider" type="range" min="20" max="600" step="1" value="220" />
+    </div>
+    <div class="control">
+      <label for="tolerance-slider">
+        <span>Stop Tolerance</span>
+        <span id="tolerance-value">10</span>
+      </label>
+      <input id="tolerance-slider" type="range" min="0" max="80" step="1" value="10" />
+    </div>
+    <div class="control">
+      <label for="dash-speed-slider">
+        <span>Dash Speed</span>
+        <span id="dash-speed-value">6500</span>
+      </label>
+      <input id="dash-speed-slider" type="range" min="10" max="10000" step="5" value="6500" />
+    </div>
+    <div class="control">
+      <label for="post-dash-speed-slider">
+        <span>Post Dash Speed</span>
+        <span id="post-dash-speed-value">1000</span>
+      </label>
+      <input id="post-dash-speed-slider" type="range" min="0" max="1000" step="1" value="1000" />
+    </div>
+  </aside>
+
+  <main class="window" aria-label="black window">
+    <div class="scene" id="scene">
+      <div class="entities">
+        <div class="layer" id="circles-layer"></div>
+        <div class="layer" id="players-layer"></div>
+        <div class="ship-collider" id="ship-collider"></div>
+      </div>
+    </div>
+    <div class="stats" id="stats" aria-live="off"></div>
+  </main>
+
+  <script src="./client-config.js"></script>
+  <script src="./client/bootstrap.js"></script>
+</body>
+</html>
