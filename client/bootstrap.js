@@ -389,7 +389,7 @@
 
     function applyCollisionDamage(player, relativeVelocityX, relativeVelocityY, tickRate) {
       const relativeSpeedPerSecond = Math.hypot(relativeVelocityX, relativeVelocityY) * tickRate;
-      const damage = roundToTenth(relativeSpeedPerSecond / 500);
+      const damage = roundToTenth(relativeSpeedPerSecond / 100);
       applyDamage(player, damage);
     }
 
