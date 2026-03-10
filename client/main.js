@@ -647,7 +647,7 @@ function handleInputEvents() {
       return;
     }
 
-    if (event.code === "KeyB" && !runtime.isBrakeHeld) {
+    if (event.code === "KeyZ" && !runtime.isBrakeHeld) {
       runtime.isBrakeHeld = true;
       runtime.input.brakePressNonce += 1;
       markInputDirty();
@@ -656,7 +656,7 @@ function handleInputEvents() {
   });
 
   window.addEventListener("keyup", (event) => {
-    if (event.code === "KeyB" && runtime.isBrakeHeld) {
+    if (event.code === "KeyZ" && runtime.isBrakeHeld) {
       runtime.isBrakeHeld = false;
       runtime.input.brakeReleaseNonce += 1;
       markInputDirty();

@@ -189,6 +189,10 @@ function updateResources(state, player) {
     return;
   }
 
+  if (player.stamina < MAX_STAMINA) {
+    return;
+  }
+
   const maxAffordableHeal = player.stamina / HEALTH_REGEN_STAMINA_COST_PER_SECOND;
   const healStep = HEALTH_REGEN_PER_SECOND / state.tickRate;
   const appliedHeal = Math.min(healStep, maxAffordableHeal, MAX_HEALTH - player.health);

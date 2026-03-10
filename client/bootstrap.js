@@ -415,6 +415,10 @@
         return;
       }
 
+      if (player.stamina < MAX_STAMINA) {
+        return;
+      }
+
       const maxAffordableHeal = player.stamina / HEALTH_REGEN_STAMINA_COST_PER_SECOND;
       const healStep = HEALTH_REGEN_PER_SECOND / state.tickRate;
       const appliedHeal = Math.min(healStep, maxAffordableHeal, MAX_HEALTH - player.health);
@@ -1655,7 +1659,7 @@
         return;
       }
 
-      if (event.code === "KeyB" && !runtime.isBrakeHeld) {
+      if (event.code === "KeyZ" && !runtime.isBrakeHeld) {
         runtime.isBrakeHeld = true;
         runtime.input.brakePressNonce += 1;
         markInputDirty();
@@ -1664,7 +1668,7 @@
     });
 
     window.addEventListener("keyup", (event) => {
-      if (event.code === "KeyB" && runtime.isBrakeHeld) {
+      if (event.code === "KeyZ" && runtime.isBrakeHeld) {
         runtime.isBrakeHeld = false;
         runtime.input.brakeReleaseNonce += 1;
         markInputDirty();
