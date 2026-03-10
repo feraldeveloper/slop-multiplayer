@@ -1,4 +1,5 @@
 import {
+  MAX_HEALTH,
   MAX_STAMINA,
   PLAYER_COLLIDER_RADIUS,
   PLAYER_SIZE,
@@ -25,6 +26,8 @@ const playersLayerEl = document.querySelector("#players-layer");
 const shipColliderEl = document.querySelector("#ship-collider");
 const statsEl = document.querySelector("#stats");
 const hudEl = document.querySelector("#hud");
+const healthFillEl = document.querySelector("#health-fill");
+const healthValueEl = document.querySelector("#health-value");
 const staminaFillEl = document.querySelector("#stamina-fill");
 const staminaValueEl = document.querySelector("#stamina-value");
 
@@ -65,6 +68,7 @@ const runtime = {
   interpolationEnabled: true,
   isHudVisible: false,
   showCollider: false,
+  displayedHealth: MAX_HEALTH,
   displayedStamina: MAX_STAMINA,
   sceneScale: 1,
   sceneOffsetX: 0,
@@ -237,6 +241,19 @@ function updateStaminaDisplay(snapshot) {
   staminaValueEl.textContent = `${stamina.toFixed(2)} / ${MAX_STAMINA.toFixed(2)}`;
 }
 
+function updateHealthDisplay(snapshot) {
+  const player = snapshot?.players.find((entry) => entry.id === runtime.localPlayerId);
+  const health = player?.health ?? MAX_HEALTH;
+
+  runtime.displayedHealth += (health - runtime.displayedHealth) * 0.18;
+  if (Math.abs(health - runtime.displayedHealth) < 0.01) {
+    runtime.displayedHealth = health;
+  }
+
+  healthFillEl.style.transform = `scaleX(${runtime.displayedHealth / MAX_HEALTH})`;
+  healthValueEl.textContent = `${health.toFixed(2)} / ${MAX_HEALTH.toFixed(2)}`;
+}
+
 function getOrCreatePlayerView(playerId) {
   if (!playerViews.has(playerId)) {
     const element = document.createElement("img");
@@ -338,6 +355,7 @@ function render(now) {
 
   syncEntityViews(snapshot);
   updateCollider(snapshot);
+  updateHealthDisplay(runtime.latestSnapshot || snapshot);
   updateStaminaDisplay(runtime.latestSnapshot || snapshot);
   updateStats(snapshot);
 }

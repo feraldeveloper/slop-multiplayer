@@ -16,7 +16,11 @@ import {
   DASH_DURATION_SECONDS,
   DEFAULT_SIMULATION_SETTINGS,
   DEFAULT_TICK_RATE,
+  HEALTH_REGEN_DELAY_AFTER_DAMAGE,
+  HEALTH_REGEN_PER_SECOND,
+  HEALTH_REGEN_STAMINA_COST_PER_SECOND,
   MAX_STAMINA,
+  MAX_HEALTH,
   OFFSCREEN_DESPAWN_MARGIN,
   PLAYER_COLLIDER_RADIUS,
   PLAYER_MAX_SPEED_PER_SECOND,
@@ -144,21 +148,56 @@ function updateRotation(state, player) {
   player.angle = normalizeAngle(player.angle + appliedDelta);
 }
 
-function regenStamina(state, player) {
+function roundToTenth(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function applyDamage(player, damage) {
+  if (damage <= 0) {
+    return;
+  }
+
+  player.health = Math.max(0, player.health - damage);
+  player.healthRegenCooldown = HEALTH_REGEN_DELAY_AFTER_DAMAGE;
+}
+
+function applyCollisionDamage(player, relativeVelocityX, relativeVelocityY, tickRate) {
+  const relativeSpeedPerSecond = Math.hypot(relativeVelocityX, relativeVelocityY) * tickRate;
+  const damage = roundToTenth(relativeSpeedPerSecond / 500);
+  applyDamage(player, damage);
+}
+
+function updateResources(state, player) {
   if (player.brakeActive) {
     player.regenCooldown = STAMINA_REGEN_DELAY_AFTER_BRAKE;
     if (player.stamina > 0) {
       player.stamina = Math.max(0, player.stamina - BRAKE_STAMINA_DRAIN_PER_SECOND / state.tickRate);
     }
-    return;
-  }
-
-  if (player.regenCooldown > 0) {
+  } else if (player.regenCooldown > 0) {
     player.regenCooldown = Math.max(0, player.regenCooldown - 1 / state.tickRate);
+  } else {
+    player.stamina = Math.min(MAX_STAMINA, player.stamina + STAMINA_REGEN_PER_SECOND / state.tickRate);
+  }
+
+  if (player.healthRegenCooldown > 0) {
+    player.healthRegenCooldown = Math.max(0, player.healthRegenCooldown - 1 / state.tickRate);
     return;
   }
 
-  player.stamina = Math.min(MAX_STAMINA, player.stamina + STAMINA_REGEN_PER_SECOND / state.tickRate);
+  if (player.health >= MAX_HEALTH) {
+    player.health = MAX_HEALTH;
+    return;
+  }
+
+  const maxAffordableHeal = player.stamina / HEALTH_REGEN_STAMINA_COST_PER_SECOND;
+  const healStep = HEALTH_REGEN_PER_SECOND / state.tickRate;
+  const appliedHeal = Math.min(healStep, maxAffordableHeal, MAX_HEALTH - player.health);
+  if (appliedHeal <= 0) {
+    return;
+  }
+
+  player.health += appliedHeal;
+  player.stamina = Math.max(0, player.stamina - appliedHeal * HEALTH_REGEN_STAMINA_COST_PER_SECOND);
 }
 
 function applyBrake(player) {
@@ -329,6 +368,8 @@ function updatePlayerMotion(state, player) {
 }
 
 function resolveShipCircleCollision(player, circle) {
+  const impactVelocityX = circle.vx - player.vx;
+  const impactVelocityY = circle.vy - player.vy;
   const dx = circle.x - player.x;
   const dy = circle.y - player.y;
   const distance = Math.hypot(dx, dy);
@@ -374,6 +415,7 @@ function resolveShipCircleCollision(player, circle) {
   circle.vy -= tangentY * tangentSpeed * COLLISION_FRICTION * circleShare;
 
   circle.vx += player.vx * CIRCLE_PUSH_FACTOR;
+  applyCollisionDamage(player, impactVelocityX, impactVelocityY, player.tickRate || 1);
   return true;
 }
 
@@ -544,6 +586,8 @@ function resolvePlayerCollisions(state) {
       a.vy -= impulseY;
       b.vx += impulseX;
       b.vy += impulseY;
+      applyCollisionDamage(a, relativeVelocityX, relativeVelocityY, state.tickRate);
+      applyCollisionDamage(b, relativeVelocityX, relativeVelocityY, state.tickRate);
     }
   }
 }
@@ -628,8 +672,11 @@ export function addPlayer(state, { id, name, joinedAt = Date.now() }) {
     postDashVelocityX: 0,
     postDashVelocityY: 0,
     dashTicksRemaining: 0,
+    tickRate: state.tickRate,
+    health: MAX_HEALTH,
     stamina: MAX_STAMINA,
     regenCooldown: 0,
+    healthRegenCooldown: 0,
     followActive: false,
     brakeActive: false,
     input: createDefaultInput(),
@@ -686,8 +733,9 @@ export function tickGame(state) {
   state.tick += 1;
 
   for (const player of state.players.values()) {
+    player.tickRate = state.tickRate;
     applyControlPresses(player);
-    regenStamina(state, player);
+    updateResources(state, player);
     updateRotation(state, player);
     tryStartDash(state, player);
     updatePlayerMotion(state, player);
@@ -719,6 +767,7 @@ export function createSnapshot(state) {
       vx: player.vx,
       vy: player.vy,
       angle: player.angle,
+      health: player.health,
       stamina: player.stamina,
       lastInputSeq: player.lastInputSeq,
     })),
