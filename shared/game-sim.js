@@ -453,9 +453,9 @@ function sweepResolveShipCircleCollision(player, circle, startX, startY) {
     return false;
   }
 
-  const backoffTime = Math.max(0, hitTime - 0.001);
-  player.x = startX + moveX * backoffTime;
-  player.y = startY + moveY * backoffTime;
+  const contactTime = Math.min(1, hitTime + 0.001);
+  player.x = startX + moveX * contactTime;
+  player.y = startY + moveY * contactTime;
   return resolveShipCircleCollision(player, circle);
 }
 
