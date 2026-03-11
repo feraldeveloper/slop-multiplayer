@@ -100,8 +100,21 @@
       rooms: "/rooms",
     };
 
+    function normalizeRoomName(name) {
+      return String(name || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 32);
+    }
+
+    function buildRoomPath(roomId) {
+      return `/rooms/${encodeURIComponent(roomId)}`;
+    }
+
     function buildRoomWebSocketPath(roomId) {
-      return `/rooms/${encodeURIComponent(roomId)}/ws`;
+      return `${buildRoomPath(roomId)}/ws`;
     }
 
     function apiBaseToWebSocketBase(apiBaseUrl) {
@@ -130,6 +143,8 @@
     return {
       DEFAULT_TICK_RATE: GameConfig.DEFAULT_TICK_RATE,
       HTTP_ROUTES,
+      normalizeRoomName,
+      buildRoomPath,
       buildRoomWebSocketPath,
       apiBaseToWebSocketBase,
       buildRoomWebSocketUrl,
@@ -138,18 +153,41 @@
   })();
 
   const Net = (() => {
-    const { HTTP_ROUTES, MESSAGE_TYPES, buildRoomWebSocketUrl } = Protocol;
+    const { HTTP_ROUTES, MESSAGE_TYPES, buildRoomPath, buildRoomWebSocketUrl, normalizeRoomName } = Protocol;
 
-    async function createRoom(apiBaseUrl) {
+    function apiUrl(apiBaseUrl, path) {
+      return `${apiBaseUrl.replace(/\/$/, "")}${path}`;
+    }
+
+    async function createRoom(apiBaseUrl, roomName) {
+      const normalizedRoomName = normalizeRoomName(roomName);
       const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}${HTTP_ROUTES.rooms}`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
         },
+        body: JSON.stringify({ name: normalizedRoomName }),
       });
 
       if (!response.ok) {
-        throw new Error(`Room creation failed: ${response.status}`);
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `Room creation failed: ${response.status}`);
+      }
+
+      return response.json();
+    }
+
+    async function getRoom(apiBaseUrl, roomName) {
+      const roomId = normalizeRoomName(roomName);
+      const response = await fetch(apiUrl(apiBaseUrl, buildRoomPath(roomId)));
+
+      if (response.status === 404) {
+        return null;
+      }
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `Room lookup failed: ${response.status}`);
       }
 
       return response.json();
@@ -231,6 +269,7 @@
 
     return {
       createRoom,
+      getRoom,
       connectToRoom,
     };
   })();
@@ -1255,7 +1294,7 @@
     PLAYER_SPRITE_ANGLE_OFFSET,
     WORLD_WIDTH,
   } = GameConfig;
-  const { createRoom, connectToRoom } = Net;
+  const { createRoom, getRoom, connectToRoom } = Net;
   const {
     addPlayer,
     createGameState,
@@ -1268,6 +1307,12 @@
   } = GameSim;
 
   const windowEl = document.querySelector(".window");
+  const roomScreenEl = document.querySelector("#room-screen");
+  const roomNameInputEl = document.querySelector("#room-name-input");
+  const playerNameInputEl = document.querySelector("#player-name-input");
+  const createRoomButtonEl = document.querySelector("#create-room-button");
+  const joinRoomButtonEl = document.querySelector("#join-room-button");
+  const roomStatusEl = document.querySelector("#room-status");
   const sceneEl = document.querySelector("#scene");
   const circlesLayerEl = document.querySelector("#circles-layer");
   const bulletsLayerEl = document.querySelector("#bullets-layer");
@@ -1301,8 +1346,8 @@
 
   const config = {
     apiBaseUrl: "",
-    autoConnect: true,
-    autoCreateRoom: true,
+    autoConnect: false,
+    autoCreateRoom: false,
     roomId: "",
     playerName: `pilot-${Math.random().toString(36).slice(2, 6)}`,
     ...(window.GAME_CONFIG || {}),
@@ -1312,6 +1357,8 @@
     mode: config.apiBaseUrl ? "connecting" : "offline",
     connectionStatus: config.apiBaseUrl ? "Connecting" : "Offline",
     roomId: "",
+    roomName: "",
+    selectorBusy: false,
     localPlayerId: "local-player",
     interpolationEnabled: true,
     isHudVisible: false,
@@ -1363,6 +1410,26 @@
   function setHudVisible(nextVisible) {
     runtime.isHudVisible = nextVisible;
     hudEl.classList.toggle("is-hidden", !runtime.isHudVisible);
+  }
+
+  function setRoomScreenVisible(nextVisible) {
+    roomScreenEl.classList.toggle("is-hidden", !nextVisible);
+  }
+
+  function setRoomStatus(message = "") {
+    roomStatusEl.textContent = message;
+  }
+
+  function setSelectorBusy(nextBusy) {
+    runtime.selectorBusy = nextBusy;
+    createRoomButtonEl.disabled = nextBusy;
+    joinRoomButtonEl.disabled = nextBusy;
+    roomNameInputEl.disabled = nextBusy;
+    playerNameInputEl.disabled = nextBusy;
+  }
+
+  function isRoomScreenActive() {
+    return !roomScreenEl.classList.contains("is-hidden");
   }
 
   function setColliderVisible(nextVisible) {
@@ -1802,21 +1869,11 @@
     updateHudMode("Local Simulation");
   }
 
-  async function initializeOnlineMode() {
+  async function initializeOnlineMode(roomId, roomName) {
     runtime.mode = "connecting";
     runtime.connectionStatus = "Connecting";
+    runtime.roomName = roomName || roomId;
     updateHudMode("Multiplayer");
-
-    const roomFromUrl = new URL(window.location.href).searchParams.get("room");
-    let roomId = config.roomId || roomFromUrl || "";
-
-    if (!roomId && config.autoCreateRoom) {
-      const created = await createRoom(config.apiBaseUrl);
-      roomId = created.roomId;
-      const url = new URL(window.location.href);
-      url.searchParams.set("room", roomId);
-      window.history.replaceState({}, "", url);
-    }
 
     if (!roomId) {
       throw new Error("No room id available");
@@ -1835,6 +1892,7 @@
       onWelcome: (message) => {
         runtime.localPlayerId = message.playerId;
         runtime.roomId = message.roomId || runtime.roomId;
+        runtime.roomName = message.roomName || runtime.roomName;
         runtime.tickRate = message.tickRate;
         runtime.tickDurationMs = 1000 / runtime.tickRate;
         runtime.input.pointerX = message.player?.x ?? runtime.input.pointerX;
@@ -1863,6 +1921,77 @@
     });
 
     runtime.multiplayerSession = session;
+  }
+
+  async function enterOnlineRoom(action) {
+    const rawRoomName = roomNameInputEl.value;
+    const roomName = Protocol.normalizeRoomName(rawRoomName);
+    const playerName = playerNameInputEl.value.trim().slice(0, 24) || config.playerName;
+
+    if (!roomName) {
+      setRoomStatus("Enter a valid room name.");
+      roomNameInputEl.focus();
+      return;
+    }
+
+    setSelectorBusy(true);
+    setRoomStatus("");
+    config.playerName = playerName;
+
+    try {
+      let room;
+      if (action === "create") {
+        room = await createRoom(config.apiBaseUrl, roomName);
+      } else {
+        room = await getRoom(config.apiBaseUrl, roomName);
+        if (!room) {
+          throw new Error("That room does not exist.");
+        }
+      }
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("room", room.roomId);
+      window.history.replaceState({}, "", url);
+
+      setRoomScreenVisible(false);
+      await initializeOnlineMode(room.roomId, room.roomName);
+    } catch (error) {
+      setRoomStatus(error?.message || "Room action failed.");
+      setRoomScreenVisible(true);
+    } finally {
+      setSelectorBusy(false);
+    }
+  }
+
+  function handleRoomSelector() {
+    const roomFromUrl = new URL(window.location.href).searchParams.get("room");
+    if (roomFromUrl) {
+      roomNameInputEl.value = decodeURIComponent(roomFromUrl);
+    }
+
+    playerNameInputEl.value = config.playerName;
+
+    createRoomButtonEl.addEventListener("click", async () => {
+      await enterOnlineRoom("create");
+    });
+
+    joinRoomButtonEl.addEventListener("click", async () => {
+      await enterOnlineRoom("join");
+    });
+
+    roomNameInputEl.addEventListener("keydown", async (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        await enterOnlineRoom("join");
+      }
+    });
+
+    playerNameInputEl.addEventListener("keydown", async (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        await enterOnlineRoom("join");
+      }
+    });
   }
 
   function handleSliderInput() {
@@ -1927,6 +2056,10 @@
 
   function handleInputEvents() {
     window.addEventListener("keydown", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
+
       if (event.code === "Tab") {
         setHudVisible(!runtime.isHudVisible);
         event.preventDefault();
@@ -1961,6 +2094,10 @@
     });
 
     window.addEventListener("keyup", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
+
       if (event.code === "KeyZ" && runtime.isBrakeHeld) {
         runtime.isBrakeHeld = false;
         runtime.input.brakeReleaseNonce += 1;
@@ -1969,14 +2106,24 @@
     });
 
     windowEl.addEventListener("mousemove", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
       updatePointer(event.clientX, event.clientY);
     });
 
     windowEl.addEventListener("mouseenter", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
       updatePointer(event.clientX, event.clientY);
     });
 
     windowEl.addEventListener("mousedown", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
+
       if (event.button === 2 && !runtime.isRightMouseDown) {
         runtime.isRightMouseDown = true;
         updatePointer(event.clientX, event.clientY);
@@ -1994,6 +2141,10 @@
     });
 
     window.addEventListener("mouseup", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
+
       if (event.button === 0 && runtime.isDashMouseDown) {
         runtime.isDashMouseDown = false;
         if (runtime.isRightMouseDown) {
@@ -2040,18 +2191,14 @@
   async function main() {
     setHudVisible(false);
     setColliderVisible(false);
+    setRoomScreenVisible(Boolean(config.apiBaseUrl));
     handleSliderInput();
     handleInputEvents();
+    handleRoomSelector();
     updateSceneLayout();
 
-    if (!config.apiBaseUrl || config.autoConnect === false) {
+    if (!config.apiBaseUrl) {
       initializeOfflineMode();
-    } else {
-      try {
-        await initializeOnlineMode();
-      } catch {
-        initializeOfflineMode();
-      }
     }
 
     window.requestAnimationFrame(frame);

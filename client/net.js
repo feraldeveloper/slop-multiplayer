@@ -1,19 +1,44 @@
 import {
+  buildRoomPath,
   HTTP_ROUTES,
   MESSAGE_TYPES,
   buildRoomWebSocketUrl,
+  normalizeRoomName,
 } from "../shared/protocol.js";
 
-export async function createRoom(apiBaseUrl) {
+function apiUrl(apiBaseUrl, path) {
+  return `${apiBaseUrl.replace(/\/$/, "")}${path}`;
+}
+
+export async function createRoom(apiBaseUrl, roomName) {
+  const normalizedRoomName = normalizeRoomName(roomName);
   const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}${HTTP_ROUTES.rooms}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
     },
+    body: JSON.stringify({ name: normalizedRoomName }),
   });
 
   if (!response.ok) {
-    throw new Error(`Room creation failed: ${response.status}`);
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || `Room creation failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function getRoom(apiBaseUrl, roomName) {
+  const roomId = normalizeRoomName(roomName);
+  const response = await fetch(apiUrl(apiBaseUrl, buildRoomPath(roomId)));
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || `Room lookup failed: ${response.status}`);
   }
 
   return response.json();
