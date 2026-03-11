@@ -152,6 +152,10 @@
       cursor: pointer;
     }
 
+    .room-actions button:last-child {
+      background: linear-gradient(135deg, #f7d774 0%, #ffa86a 100%);
+    }
+
     .room-actions button:disabled {
       opacity: 0.55;
       cursor: progress;
@@ -344,7 +348,8 @@
         <input id="player-name-input" type="text" maxlength="24" autocomplete="off" spellcheck="false" />
       </div>
       <div class="room-actions">
-        <button id="room-action-button" type="button">Enter Room</button>
+        <button id="create-room-button" type="button">Create Room</button>
+        <button id="join-room-button" type="button">Join Room</button>
       </div>
       <div class="room-status" id="room-status" aria-live="polite"></div>
     </div>

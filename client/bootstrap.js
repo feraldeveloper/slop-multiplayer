@@ -1310,7 +1310,8 @@
   const roomScreenEl = document.querySelector("#room-screen");
   const roomNameInputEl = document.querySelector("#room-name-input");
   const playerNameInputEl = document.querySelector("#player-name-input");
-  const roomActionButtonEl = document.querySelector("#room-action-button");
+  const createRoomButtonEl = document.querySelector("#create-room-button");
+  const joinRoomButtonEl = document.querySelector("#join-room-button");
   const roomStatusEl = document.querySelector("#room-status");
   const sceneEl = document.querySelector("#scene");
   const circlesLayerEl = document.querySelector("#circles-layer");
@@ -1421,7 +1422,8 @@
 
   function setSelectorBusy(nextBusy) {
     runtime.selectorBusy = nextBusy;
-    roomActionButtonEl.disabled = nextBusy;
+    createRoomButtonEl.disabled = nextBusy;
+    joinRoomButtonEl.disabled = nextBusy;
     roomNameInputEl.disabled = nextBusy;
     playerNameInputEl.disabled = nextBusy;
   }
@@ -1921,7 +1923,7 @@
     runtime.multiplayerSession = session;
   }
 
-  async function enterOnlineRoom() {
+  async function enterOnlineRoom(action) {
     const rawRoomName = roomNameInputEl.value;
     const roomName = Protocol.normalizeRoomName(rawRoomName);
     const playerName = playerNameInputEl.value.trim().slice(0, 24) || config.playerName;
@@ -1937,9 +1939,14 @@
     config.playerName = playerName;
 
     try {
-      let room = await getRoom(config.apiBaseUrl, roomName);
-      if (!room) {
+      let room;
+      if (action === "create") {
         room = await createRoom(config.apiBaseUrl, roomName);
+      } else {
+        room = await getRoom(config.apiBaseUrl, roomName);
+        if (!room) {
+          throw new Error("That room does not exist.");
+        }
       }
 
       const url = new URL(window.location.href);
@@ -1964,21 +1971,25 @@
 
     playerNameInputEl.value = config.playerName;
 
-    roomActionButtonEl.addEventListener("click", async () => {
-      await enterOnlineRoom();
+    createRoomButtonEl.addEventListener("click", async () => {
+      await enterOnlineRoom("create");
+    });
+
+    joinRoomButtonEl.addEventListener("click", async () => {
+      await enterOnlineRoom("join");
     });
 
     roomNameInputEl.addEventListener("keydown", async (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        await enterOnlineRoom();
+        await enterOnlineRoom("join");
       }
     });
 
     playerNameInputEl.addEventListener("keydown", async (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        await enterOnlineRoom();
+        await enterOnlineRoom("join");
       }
     });
   }
