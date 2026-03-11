@@ -729,10 +729,51 @@ function spawnCircles(state) {
   }
 }
 
+function collidesBulletWithCircle(bullet, circle) {
+  const dx = circle.x - bullet.x;
+  const dy = circle.y - bullet.y;
+  const minDistance = bullet.radius + circle.radius;
+  return dx * dx + dy * dy <= minDistance * minDistance;
+}
+
+function collidesBulletWithPlayer(bullet, player) {
+  const dx = player.x - bullet.x;
+  const dy = player.y - bullet.y;
+  const minDistance = bullet.radius + PLAYER_COLLIDER_RADIUS;
+  return dx * dx + dy * dy <= minDistance * minDistance;
+}
+
 function updateBullets(state) {
   for (const bullet of state.bullets.slice()) {
     bullet.x += bullet.vx;
     bullet.y += bullet.vy;
+
+    let consumed = false;
+
+    for (const circle of state.circles) {
+      if (collidesBulletWithCircle(bullet, circle)) {
+        consumed = true;
+        break;
+      }
+    }
+
+    if (!consumed) {
+      for (const player of state.players.values()) {
+        if (!player.isAlive || player.id === bullet.ownerId) {
+          continue;
+        }
+
+        if (collidesBulletWithPlayer(bullet, player)) {
+          consumed = true;
+          break;
+        }
+      }
+    }
+
+    if (consumed) {
+      state.bullets.splice(state.bullets.indexOf(bullet), 1);
+      continue;
+    }
 
     if (
       bullet.y + bullet.radius < -OFFSCREEN_DESPAWN_MARGIN ||
