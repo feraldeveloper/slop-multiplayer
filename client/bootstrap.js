@@ -16,6 +16,7 @@
     const HEALTH_REGEN_PER_SECOND = 2;
     const HEALTH_REGEN_STAMINA_COST_PER_SECOND = 4;
     const HEALTH_REGEN_DELAY_AFTER_DAMAGE = 3;
+    const RESPAWN_DELAY_SECONDS = 5;
     const MAX_STAMINA = 12;
     const DASH_COST = 4;
     const DASH_DURATION_SECONDS = 0.25;
@@ -64,6 +65,7 @@
       HEALTH_REGEN_PER_SECOND,
       HEALTH_REGEN_STAMINA_COST_PER_SECOND,
       HEALTH_REGEN_DELAY_AFTER_DAMAGE,
+      RESPAWN_DELAY_SECONDS,
       MAX_STAMINA,
       DASH_COST,
       DASH_DURATION_SECONDS,
@@ -265,6 +267,7 @@
       PLAYER_SLEEP_SPEED_PER_TICK,
       PLAYER_THRUST_STEER_LERP,
       PLAYER_TURN_SPEED_PER_SECOND,
+      RESPAWN_DELAY_SECONDS,
       SHIP_INVERSE_MASS,
       STAMINA_REGEN_DELAY_AFTER_BRAKE,
       STAMINA_REGEN_PER_SECOND,
@@ -391,13 +394,63 @@
       return Math.round(value * 10) / 10;
     }
 
+    function respawnPlayer(state, player) {
+      const spawn = createSpawnPosition(state);
+      player.x = spawn.x;
+      player.y = spawn.y;
+      player.vx = 0;
+      player.vy = 0;
+      player.angle = 0;
+      player.facingX = 1;
+      player.facingY = 0;
+      player.targetX = spawn.x;
+      player.targetY = spawn.y;
+      player.dashTargetX = spawn.x;
+      player.dashTargetY = spawn.y;
+      player.dashVelocityX = 0;
+      player.dashVelocityY = 0;
+      player.postDashVelocityX = 0;
+      player.postDashVelocityY = 0;
+      player.dashTicksRemaining = 0;
+      player.health = MAX_HEALTH;
+      player.stamina = MAX_STAMINA;
+      player.regenCooldown = 0;
+      player.healthRegenCooldown = 0;
+      player.followActive = false;
+      player.brakeActive = false;
+      player.isAlive = true;
+      player.respawnTimer = 0;
+    }
+
+    function killPlayer(player) {
+      player.health = 0;
+      player.vx = 0;
+      player.vy = 0;
+      player.dashVelocityX = 0;
+      player.dashVelocityY = 0;
+      player.postDashVelocityX = 0;
+      player.postDashVelocityY = 0;
+      player.dashTicksRemaining = 0;
+      player.followActive = false;
+      player.brakeActive = false;
+      player.isAlive = false;
+      player.respawnTimer = RESPAWN_DELAY_SECONDS;
+    }
+
     function applyDamage(player, damage) {
+      if (!player.isAlive) {
+        return;
+      }
+
       if (damage <= 0) {
         return;
       }
 
       player.health = Math.max(0, player.health - damage);
       player.healthRegenCooldown = HEALTH_REGEN_DELAY_AFTER_DAMAGE;
+      if (player.health === 0) {
+        killPlayer(player);
+      }
     }
 
     function applyCollisionDamage(player, relativeVelocityX, relativeVelocityY, tickRate) {
@@ -407,6 +460,14 @@
     }
 
     function updateResources(state, player) {
+      if (!player.isAlive) {
+        player.respawnTimer = Math.max(0, player.respawnTimer - 1 / state.tickRate);
+        if (player.respawnTimer <= 0) {
+          respawnPlayer(state, player);
+        }
+        return;
+      }
+
       if (player.brakeActive) {
         player.regenCooldown = STAMINA_REGEN_DELAY_AFTER_BRAKE;
         if (player.stamina > 0) {
@@ -444,6 +505,10 @@
     }
 
     function applyBrake(player) {
+      if (!player.isAlive) {
+        return;
+      }
+
       if (!player.brakeActive || player.stamina <= 0) {
         return;
       }
@@ -518,6 +583,10 @@
     }
 
     function tryFireBullet(state, player) {
+      if (!player.isAlive) {
+        return;
+      }
+
       if (player.input.fireNonce <= player.lastConsumedFireNonce) {
         return;
       }
@@ -638,6 +707,10 @@
     }
 
     function resolveShipCircleCollision(player, circle) {
+      if (!player.isAlive) {
+        return false;
+      }
+
       const impactVelocityX = circle.vx - player.vx;
       const impactVelocityY = circle.vy - player.vy;
       const dx = circle.x - player.x;
@@ -730,6 +803,10 @@
     }
 
     function resolveShipSweep(state, player, startX, startY) {
+      if (!player.isAlive) {
+        return false;
+      }
+
       let collided = false;
       for (const circle of state.circles) {
         collided = sweepResolveShipCircleCollision(player, circle, startX, startY) || collided;
@@ -821,6 +898,10 @@
 
         for (let j = i + 1; j < players.length; j += 1) {
           const b = players[j];
+          if (!a.isAlive || !b.isAlive) {
+            continue;
+          }
+
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const distance = Math.hypot(dx, dy);
@@ -965,6 +1046,8 @@
         stamina: MAX_STAMINA,
         regenCooldown: 0,
         healthRegenCooldown: 0,
+        isAlive: true,
+        respawnTimer: 0,
         followActive: false,
         brakeActive: false,
         input: createDefaultInput(),
@@ -1012,6 +1095,10 @@
         player.tickRate = state.tickRate;
         applyControlPresses(player);
         updateResources(state, player);
+        if (!player.isAlive) {
+          applyControlReleases(player);
+          continue;
+        }
         updateRotation(state, player);
         tryStartDash(state, player);
         tryFireBullet(state, player);
@@ -1046,6 +1133,8 @@
           vy: player.vy,
           angle: player.angle,
           health: player.health,
+          isAlive: player.isAlive,
+          respawnTimer: player.respawnTimer,
           stamina: player.stamina,
           lastInputSeq: player.lastInputSeq,
         })),
@@ -1403,6 +1492,10 @@
     const activeBulletIds = new Set();
 
     for (const player of snapshot.players) {
+      if (!player.isAlive) {
+        continue;
+      }
+
       activePlayerIds.add(player.id);
       const element = getOrCreatePlayerView(player.id);
       const drawX = player.x - PLAYER_SIZE / 2;
@@ -1466,7 +1559,7 @@
 
   function updateCollider(snapshot) {
     const player = snapshot?.players.find((entry) => entry.id === runtime.localPlayerId);
-    if (!player) {
+    if (!player || !player.isAlive) {
       shipColliderEl.style.transform = "translate(-9999px, -9999px)";
       return;
     }

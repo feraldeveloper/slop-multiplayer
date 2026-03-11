@@ -321,6 +321,10 @@ function syncEntityViews(snapshot) {
   const activeBulletIds = new Set();
 
   for (const player of snapshot.players) {
+    if (!player.isAlive) {
+      continue;
+    }
+
     activePlayerIds.add(player.id);
     const element = getOrCreatePlayerView(player.id);
     const drawX = player.x - PLAYER_SIZE / 2;
@@ -384,7 +388,7 @@ function updateStats(snapshot) {
 
 function updateCollider(snapshot) {
   const player = snapshot?.players.find((entry) => entry.id === runtime.localPlayerId);
-  if (!player) {
+  if (!player || !player.isAlive) {
     shipColliderEl.style.transform = "translate(-9999px, -9999px)";
     return;
   }

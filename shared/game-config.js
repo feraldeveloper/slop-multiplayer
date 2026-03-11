@@ -13,6 +13,7 @@ export const MAX_HEALTH = 20;
 export const HEALTH_REGEN_PER_SECOND = 2;
 export const HEALTH_REGEN_STAMINA_COST_PER_SECOND = 4;
 export const HEALTH_REGEN_DELAY_AFTER_DAMAGE = 3;
+export const RESPAWN_DELAY_SECONDS = 5;
 
 export const MAX_STAMINA = 12;
 export const DASH_COST = 4;
