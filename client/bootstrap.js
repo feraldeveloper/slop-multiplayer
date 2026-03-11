@@ -968,29 +968,51 @@
       }
     }
 
-    function collidesBulletWithCircle(bullet, circle) {
-      const dx = circle.x - bullet.x;
-      const dy = circle.y - bullet.y;
-      const minDistance = bullet.radius + circle.radius;
-      return dx * dx + dy * dy <= minDistance * minDistance;
+    function segmentIntersectsCircle(startX, startY, endX, endY, centerX, centerY, radius) {
+      const moveX = endX - startX;
+      const moveY = endY - startY;
+      const startDx = startX - centerX;
+      const startDy = startY - centerY;
+      const a = moveX * moveX + moveY * moveY;
+      const radiusSquared = radius * radius;
+
+      if (a === 0) {
+        return startDx * startDx + startDy * startDy <= radiusSquared;
+      }
+
+      const b = 2 * (startDx * moveX + startDy * moveY);
+      const c = startDx * startDx + startDy * startDy - radiusSquared;
+      const discriminant = b * b - 4 * a * c;
+
+      if (discriminant < 0) {
+        return false;
+      }
+
+      const sqrtDiscriminant = Math.sqrt(discriminant);
+      const t0 = (-b - sqrtDiscriminant) / (2 * a);
+      const t1 = (-b + sqrtDiscriminant) / (2 * a);
+      return (t0 >= 0 && t0 <= 1) || (t1 >= 0 && t1 <= 1);
     }
 
-    function collidesBulletWithPlayer(bullet, player) {
-      const dx = player.x - bullet.x;
-      const dy = player.y - bullet.y;
-      const minDistance = bullet.radius + PLAYER_COLLIDER_RADIUS;
-      return dx * dx + dy * dy <= minDistance * minDistance;
+    function collidesBulletWithCircle(bullet, circle, startX, startY) {
+      return segmentIntersectsCircle(startX, startY, bullet.x, bullet.y, circle.x, circle.y, bullet.radius + circle.radius);
+    }
+
+    function collidesBulletWithPlayer(bullet, player, startX, startY) {
+      return segmentIntersectsCircle(startX, startY, bullet.x, bullet.y, player.x, player.y, bullet.radius + PLAYER_COLLIDER_RADIUS);
     }
 
     function updateBullets(state) {
       for (const bullet of state.bullets.slice()) {
+        const startX = bullet.x;
+        const startY = bullet.y;
         bullet.x += bullet.vx;
         bullet.y += bullet.vy;
 
         let consumed = false;
 
         for (const circle of state.circles) {
-          if (collidesBulletWithCircle(bullet, circle)) {
+          if (collidesBulletWithCircle(bullet, circle, startX, startY)) {
             circle.vx += bullet.vx * BULLET_PUSH_FACTOR;
             circle.vy += bullet.vy * BULLET_PUSH_FACTOR;
             consumed = true;
@@ -1004,7 +1026,7 @@
               continue;
             }
 
-            if (collidesBulletWithPlayer(bullet, player)) {
+            if (collidesBulletWithPlayer(bullet, player, startX, startY)) {
               consumed = true;
               break;
             }
