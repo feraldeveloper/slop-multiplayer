@@ -11,9 +11,7 @@ import {
   DEFAULT_TICK_RATE,
   HTTP_ROUTES,
   MESSAGE_TYPES,
-  buildRoomPath,
   buildRoomWebSocketPath,
-  normalizeRoomName,
 } from "../../shared/protocol.js";
 
 export interface Env {
@@ -42,12 +40,6 @@ type Attachment = {
   playerId: string;
 };
 
-type RoomMetadata = {
-  roomId: string;
-  roomName: string;
-  createdAt: number;
-};
-
 const TICK_RATE = DEFAULT_TICK_RATE;
 const TICK_MS = 1000 / TICK_RATE;
 
@@ -70,6 +62,10 @@ function json(data: unknown, init?: ResponseInit): Response {
   });
 }
 
+function randomId(prefix: string): string {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url);
@@ -83,57 +79,8 @@ export default {
     }
 
     if (url.pathname === HTTP_ROUTES.rooms && request.method === "POST") {
-      const payload = await request.json().catch(() => ({} as Record<string, unknown>));
-      const roomName = String(payload?.name || "");
-      const roomId = normalizeRoomName(roomName);
-
-      if (!roomId) {
-        return json({ ok: false, error: "Room name is required" }, { status: 400 });
-      }
-
-      const id = env.ROOMS.idFromName(roomId);
-      const stub = env.ROOMS.get(id);
-      const createResponse = await stub.fetch("https://internal/internal/create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ roomId, roomName }),
-      });
-      const createPayload = await createResponse.json() as RoomMetadata & { error?: string };
-
-      if (!createResponse.ok) {
-        return json({ ok: false, error: createPayload.error || "Room already exists" }, { status: createResponse.status });
-      }
-
-      return json(
-        {
-          roomId,
-          roomName: createPayload.roomName,
-          websocketPath: buildRoomWebSocketPath(roomId),
-        },
-        { status: 201 },
-      );
-    }
-
-    const roomInfoMatch = url.pathname.match(/^\/rooms\/([^/]+)$/);
-    if (roomInfoMatch && request.method === "GET") {
-      const roomId = roomInfoMatch[1];
-      const id = env.ROOMS.idFromName(roomId);
-      const stub = env.ROOMS.get(id);
-      const metaResponse = await stub.fetch("https://internal/internal/meta");
-      const metaPayload = await metaResponse.json() as Record<string, unknown>;
-
-      if (!metaResponse.ok) {
-        return json({ ok: false, error: metaPayload.error || "Room not found" }, { status: metaResponse.status });
-      }
-
-      return json(
-        {
-          roomId,
-          roomName: metaPayload.roomName || roomId,
-          websocketPath: buildRoomWebSocketPath(roomId),
-        },
-        { status: 200 },
-      );
+      const roomId = randomId("room");
+      return json({ roomId, websocketPath: buildRoomWebSocketPath(roomId) }, { status: 201 });
     }
 
     const roomMatch = url.pathname.match(/^\/rooms\/([^/]+)\/ws$/);
@@ -151,7 +98,6 @@ export default {
         routes: [
           `GET ${HTTP_ROUTES.health}`,
           `POST ${HTTP_ROUTES.rooms}`,
-          "GET /rooms/:roomId",
           "GET /rooms/:roomId/ws (WebSocket upgrade)",
         ],
       },
@@ -163,8 +109,6 @@ export default {
 export class GameRoom implements DurableObject {
   private readonly ctx: DurableObjectState;
   private roomId = "";
-  private roomName = "";
-  private isInitialized = false;
   private gameState = createGameState({ tickRate: TICK_RATE });
   private loop: number | null = null;
 
@@ -172,48 +116,12 @@ export class GameRoom implements DurableObject {
     this.ctx = ctx;
   }
 
-  async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-    await this.loadMetadata();
-
-    if (url.pathname === "/internal/create" && request.method === "POST") {
-      const payload = await request.json().catch(() => ({} as Record<string, unknown>));
-      const roomId = String(payload?.roomId || "");
-      const requestedName = String(payload?.roomName || "");
-      const roomName = requestedName.trim() || roomId;
-
-      if (this.isInitialized) {
-        return json({ ok: false, error: "A room with that name already exists" }, { status: 409 });
-      }
-
-      this.roomId = roomId;
-      this.roomName = roomName;
-      this.isInitialized = true;
-      await this.ctx.storage.put("metadata", {
-        roomId: this.roomId,
-        roomName: this.roomName,
-        createdAt: Date.now(),
-      } satisfies RoomMetadata);
-
-      return json({ roomId: this.roomId, roomName: this.roomName }, { status: 201 });
-    }
-
-    if (url.pathname === "/internal/meta" && request.method === "GET") {
-      if (!this.isInitialized) {
-        return json({ ok: false, error: "Room not found" }, { status: 404 });
-      }
-
-      return json({ roomId: this.roomId, roomName: this.roomName }, { status: 200 });
-    }
-
+  fetch(request: Request): Response {
     if (request.headers.get("upgrade") !== "websocket") {
       return json({ ok: false, error: "Expected websocket upgrade" }, { status: 426 });
     }
 
-    if (!this.isInitialized) {
-      return json({ ok: false, error: "Room not found" }, { status: 404 });
-    }
-
+    const url = new URL(request.url);
     const roomMatch = url.pathname.match(/^\/rooms\/([^/]+)\/ws$/);
     if (roomMatch) {
       this.roomId = roomMatch[1];
@@ -233,10 +141,9 @@ export class GameRoom implements DurableObject {
     });
 
     this.startLoop();
-      this.send(server, {
+    this.send(server, {
       type: MESSAGE_TYPES.welcome,
       roomId: this.roomId,
-      roomName: this.roomName,
       playerId,
       tickRate: this.gameState.tickRate,
       world: { ...this.gameState.world },
@@ -250,21 +157,6 @@ export class GameRoom implements DurableObject {
     this.broadcastState();
 
     return new Response(null, { status: 101, webSocket: client });
-  }
-
-  private async loadMetadata(): Promise<void> {
-    if (this.isInitialized) {
-      return;
-    }
-
-    const metadata = await this.ctx.storage.get<RoomMetadata>("metadata");
-    if (!metadata) {
-      return;
-    }
-
-    this.roomId = metadata.roomId;
-    this.roomName = metadata.roomName;
-    this.isInitialized = true;
   }
 
   webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {

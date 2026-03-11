@@ -7,21 +7,8 @@ export const HTTP_ROUTES = {
   rooms: "/rooms",
 };
 
-export function normalizeRoomName(name) {
-  return String(name || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 32);
-}
-
-export function buildRoomPath(roomId) {
-  return `/rooms/${encodeURIComponent(roomId)}`;
-}
-
 export function buildRoomWebSocketPath(roomId) {
-  return `${buildRoomPath(roomId)}/ws`;
+  return `/rooms/${encodeURIComponent(roomId)}/ws`;
 }
 
 export function apiBaseToWebSocketBase(apiBaseUrl) {
