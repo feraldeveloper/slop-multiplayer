@@ -12,6 +12,7 @@
     const BULLET_SPEED_PER_SECOND = 2500;
     const BULLET_SPAWN_DISTANCE = 20;
     const BULLET_RADIUS = 6;
+    const BULLET_PUSH_FACTOR = 0.35;
     const MAX_HEALTH = 20;
     const HEALTH_REGEN_PER_SECOND = 2;
     const HEALTH_REGEN_STAMINA_COST_PER_SECOND = 4;
@@ -61,6 +62,7 @@
       BULLET_SPEED_PER_SECOND,
       BULLET_SPAWN_DISTANCE,
       BULLET_RADIUS,
+      BULLET_PUSH_FACTOR,
       MAX_HEALTH,
       HEALTH_REGEN_PER_SECOND,
       HEALTH_REGEN_STAMINA_COST_PER_SECOND,
@@ -236,6 +238,7 @@
   const GameSim = (() => {
     const {
       BULLET_RADIUS,
+      BULLET_PUSH_FACTOR,
       BULLET_SPAWN_DISTANCE,
       BULLET_SPEED_PER_SECOND,
       BRAKE_FACTOR,
@@ -988,6 +991,8 @@
 
         for (const circle of state.circles) {
           if (collidesBulletWithCircle(bullet, circle)) {
+            circle.vx += bullet.vx * BULLET_PUSH_FACTOR;
+            circle.vy += bullet.vy * BULLET_PUSH_FACTOR;
             consumed = true;
             break;
           }

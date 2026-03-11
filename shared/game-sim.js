@@ -1,4 +1,5 @@
 import {
+  BULLET_PUSH_FACTOR,
   BULLET_RADIUS,
   BULLET_SPAWN_DISTANCE,
   BULLET_SPEED_PER_SECOND,
@@ -752,6 +753,8 @@ function updateBullets(state) {
 
     for (const circle of state.circles) {
       if (collidesBulletWithCircle(bullet, circle)) {
+        circle.vx += bullet.vx * BULLET_PUSH_FACTOR;
+        circle.vy += bullet.vy * BULLET_PUSH_FACTOR;
         consumed = true;
         break;
       }
