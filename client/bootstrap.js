@@ -1268,6 +1268,10 @@
   } = GameSim;
 
   const windowEl = document.querySelector(".window");
+  const roomScreenEl = document.querySelector("#room-screen");
+  const roomNameInputEl = document.querySelector("#room-name-input");
+  const roomActionButtonEl = document.querySelector("#room-action-button");
+  const roomStatusEl = document.querySelector("#room-status");
   const sceneEl = document.querySelector("#scene");
   const circlesLayerEl = document.querySelector("#circles-layer");
   const bulletsLayerEl = document.querySelector("#bullets-layer");
@@ -1363,6 +1367,18 @@
   function setHudVisible(nextVisible) {
     runtime.isHudVisible = nextVisible;
     hudEl.classList.toggle("is-hidden", !runtime.isHudVisible);
+  }
+
+  function setRoomScreenVisible(nextVisible) {
+    roomScreenEl.classList.toggle("is-hidden", !nextVisible);
+  }
+
+  function setRoomStatus(message = "") {
+    roomStatusEl.textContent = message;
+  }
+
+  function isRoomScreenActive() {
+    return !roomScreenEl.classList.contains("is-hidden");
   }
 
   function setColliderVisible(nextVisible) {
@@ -1925,8 +1941,36 @@
     });
   }
 
+  function handleRoomSelector() {
+    roomActionButtonEl.addEventListener("click", () => {
+      const roomName = roomNameInputEl.value.trim();
+      if (!roomName) {
+        setRoomStatus("Enter a room name.");
+        roomNameInputEl.focus();
+        return;
+      }
+
+      const url = new URL(window.location.href);
+      url.searchParams.set("room", roomName);
+      window.location.href = url.toString();
+    });
+
+    roomNameInputEl.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+
+      event.preventDefault();
+      roomActionButtonEl.click();
+    });
+  }
+
   function handleInputEvents() {
     window.addEventListener("keydown", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
+
       if (event.code === "Tab") {
         setHudVisible(!runtime.isHudVisible);
         event.preventDefault();
@@ -1961,6 +2005,10 @@
     });
 
     window.addEventListener("keyup", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
+
       if (event.code === "KeyZ" && runtime.isBrakeHeld) {
         runtime.isBrakeHeld = false;
         runtime.input.brakeReleaseNonce += 1;
@@ -1969,14 +2017,24 @@
     });
 
     windowEl.addEventListener("mousemove", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
       updatePointer(event.clientX, event.clientY);
     });
 
     windowEl.addEventListener("mouseenter", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
       updatePointer(event.clientX, event.clientY);
     });
 
     windowEl.addEventListener("mousedown", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
+
       if (event.button === 2 && !runtime.isRightMouseDown) {
         runtime.isRightMouseDown = true;
         updatePointer(event.clientX, event.clientY);
@@ -1994,6 +2052,10 @@
     });
 
     window.addEventListener("mouseup", (event) => {
+      if (isRoomScreenActive()) {
+        return;
+      }
+
       if (event.button === 0 && runtime.isDashMouseDown) {
         runtime.isDashMouseDown = false;
         if (runtime.isRightMouseDown) {
@@ -2038,11 +2100,19 @@
   }
 
   async function main() {
+    const roomFromUrl = new URL(window.location.href).searchParams.get("room");
     setHudVisible(false);
     setColliderVisible(false);
+    setRoomScreenVisible(Boolean(config.apiBaseUrl) && !roomFromUrl);
     handleSliderInput();
     handleInputEvents();
+    handleRoomSelector();
     updateSceneLayout();
+
+    if (config.apiBaseUrl && !roomFromUrl) {
+      window.requestAnimationFrame(frame);
+      return;
+    }
 
     if (!config.apiBaseUrl || config.autoConnect === false) {
       initializeOfflineMode();
