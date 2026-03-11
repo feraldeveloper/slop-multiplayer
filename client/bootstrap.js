@@ -2050,7 +2050,21 @@
       try {
         await initializeOnlineMode();
       } catch {
-        initializeOfflineMode();
+        const url = new URL(window.location.href);
+        const hadRoomParam = url.searchParams.has("room");
+
+        if (hadRoomParam && config.autoCreateRoom) {
+          url.searchParams.delete("room");
+          window.history.replaceState({}, "", url);
+
+          try {
+            await initializeOnlineMode();
+          } catch {
+            initializeOfflineMode();
+          }
+        } else {
+          initializeOfflineMode();
+        }
       }
     }
 
