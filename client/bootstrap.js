@@ -1878,47 +1878,62 @@
     }
 
     runtime.roomId = roomId;
-    const session = connectToRoom({
-      apiBaseUrl: config.apiBaseUrl,
-      roomId,
-      playerName: config.playerName,
-      onOpen: () => {
-        runtime.connectionStatus = "Connected";
-        runtime.mode = "online";
-        markInputDirty();
-      },
-      onWelcome: (message) => {
-        runtime.localPlayerId = message.playerId;
-        runtime.roomId = message.roomId || runtime.roomId;
-        runtime.roomName = message.roomName || runtime.roomName;
-        runtime.tickRate = message.tickRate;
-        runtime.tickDurationMs = 1000 / runtime.tickRate;
-        runtime.input.pointerX = message.player?.x ?? runtime.input.pointerX;
-        runtime.input.pointerY = message.player?.y ?? runtime.input.pointerY;
-        setWorldSize(message.world.width, message.world.height);
-        applySliderState(message.tickRate, message.settings, true);
-        pushSnapshot({
-          tick: 0,
-          tickRate: message.tickRate,
-          world: message.world,
-          settings: message.settings,
-          players: [],
-          circles: [],
-          bullets: [],
-        }, performance.now());
-      },
-      onState: (message) => {
-        pushSnapshot(message, performance.now());
-      },
-      onClose: () => {
-        runtime.connectionStatus = "Closed";
-      },
-      onError: (error) => {
-        runtime.connectionStatus = error?.message || "Error";
-      },
+    await new Promise((resolve, reject) => {
+      let settled = false;
+      const session = connectToRoom({
+        apiBaseUrl: config.apiBaseUrl,
+        roomId,
+        playerName: config.playerName,
+        onOpen: () => {
+          runtime.connectionStatus = "Connected";
+          runtime.mode = "online";
+          markInputDirty();
+        },
+        onWelcome: (message) => {
+          runtime.localPlayerId = message.playerId;
+          runtime.roomId = message.roomId || runtime.roomId;
+          runtime.roomName = message.roomName || runtime.roomName;
+          runtime.tickRate = message.tickRate;
+          runtime.tickDurationMs = 1000 / runtime.tickRate;
+          runtime.input.pointerX = message.player?.x ?? runtime.input.pointerX;
+          runtime.input.pointerY = message.player?.y ?? runtime.input.pointerY;
+          setWorldSize(message.world.width, message.world.height);
+          applySliderState(message.tickRate, message.settings, true);
+          pushSnapshot({
+            tick: 0,
+            tickRate: message.tickRate,
+            world: message.world,
+            settings: message.settings,
+            players: [],
+            circles: [],
+            bullets: [],
+          }, performance.now());
+          runtime.multiplayerSession = session;
+          if (!settled) {
+            settled = true;
+            resolve();
+          }
+        },
+        onState: (message) => {
+          pushSnapshot(message, performance.now());
+        },
+        onClose: () => {
+          runtime.connectionStatus = "Closed";
+          if (!settled) {
+            settled = true;
+            reject(new Error("Connection closed."));
+          }
+        },
+        onError: (error) => {
+          const message = error?.message || "Connection error";
+          runtime.connectionStatus = message;
+          if (!settled) {
+            settled = true;
+            reject(new Error(message));
+          }
+        },
+      });
     });
-
-    runtime.multiplayerSession = session;
   }
 
   async function enterOnlineRoom() {
@@ -1933,7 +1948,7 @@
     }
 
     setSelectorBusy(true);
-    setRoomStatus("");
+    setRoomStatus("Connecting...");
     config.playerName = playerName;
 
     try {
@@ -1946,8 +1961,8 @@
       url.searchParams.set("room", room.roomId);
       window.history.replaceState({}, "", url);
 
-      setRoomScreenVisible(false);
       await initializeOnlineMode(room.roomId, room.roomName);
+      setRoomScreenVisible(false);
     } catch (error) {
       setRoomStatus(error?.message || "Room action failed.");
       setRoomScreenVisible(true);
