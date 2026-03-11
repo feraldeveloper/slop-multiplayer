@@ -1027,6 +1027,12 @@
             }
 
             if (collidesBulletWithPlayer(bullet, player, startX, startY)) {
+              player.vx += bullet.vx * BULLET_PUSH_FACTOR;
+              player.vy += bullet.vy * BULLET_PUSH_FACTOR;
+              applyDamage(player, 5);
+              if (player.dashTicksRemaining > 0) {
+                finishDash(player);
+              }
               consumed = true;
               break;
             }
