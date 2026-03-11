@@ -50,6 +50,6 @@ export const COLLISION_FRICTION = 0.08;
 export const OFFSCREEN_DESPAWN_MARGIN = 160;
 export const PLAYER_SLEEP_SPEED_PER_TICK = 0.05;
 export const BULLET_SPEED_PER_SECOND = 2500;
-export const BULLET_SPAWN_DISTANCE = 5;
+export const BULLET_SPAWN_DISTANCE = 0;
 export const BULLET_RADIUS = 6;
 export const BULLET_PUSH_FACTOR = 0.35;
