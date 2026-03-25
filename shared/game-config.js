@@ -53,3 +53,6 @@ export const BULLET_SPEED_PER_SECOND = 2500;
 export const BULLET_SPAWN_DISTANCE = 0;
 export const BULLET_RADIUS = 6;
 export const BULLET_PUSH_FACTOR = 0.35;
+
+export const DEFAULT_SHIP_ID = "ship1";
+export const AVAILABLE_SHIP_IDS = ["ship1", "ship2", "ship3", "ship4"];

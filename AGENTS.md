@@ -1,6 +1,6 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This project uses **bd** (beads) for issue tracking. At the start of each session, run `bd prime` and `bd ready`, use Beads for task tracking and context, and keep notes there as you work. Run `bd onboard` to get started.
 
 ## Quick Reference
 

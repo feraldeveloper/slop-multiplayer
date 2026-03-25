@@ -18,6 +18,7 @@ import {
   COLLISION_RESTITUTION,
   DASH_COST,
   DASH_DURATION_SECONDS,
+  DEFAULT_SHIP_ID,
   DEFAULT_SIMULATION_SETTINGS,
   DEFAULT_TICK_RATE,
   FIRE_COST,
@@ -36,6 +37,7 @@ import {
   SHIP_INVERSE_MASS,
   STAMINA_REGEN_DELAY_AFTER_BRAKE,
   STAMINA_REGEN_PER_SECOND,
+  AVAILABLE_SHIP_IDS,
   WORLD_HEIGHT,
   WORLD_WIDTH,
 } from "./game-config.js";
@@ -77,7 +79,14 @@ function createDefaultInput() {
     brakeReleaseNonce: 0,
     dashNonce: 0,
     fireNonce: 0,
+    respawnNonce: 0,
+    shipId: DEFAULT_SHIP_ID,
   };
+}
+
+function normalizeShipId(value, fallback = DEFAULT_SHIP_ID) {
+  const shipId = typeof value === "string" ? value.trim() : "";
+  return AVAILABLE_SHIP_IDS.includes(shipId) ? shipId : fallback;
 }
 
 function createSpawnPosition(state) {
@@ -185,6 +194,8 @@ function respawnPlayer(state, player) {
   player.brakeActive = false;
   player.isAlive = true;
   player.respawnTimer = 0;
+  player.input.pointerX = spawn.x;
+  player.input.pointerY = spawn.y;
 }
 
 function killPlayer(player) {
@@ -227,9 +238,6 @@ function applyCollisionDamage(player, relativeVelocityX, relativeVelocityY, tick
 function updateResources(state, player) {
   if (!player.isAlive) {
     player.respawnTimer = Math.max(0, player.respawnTimer - 1 / state.tickRate);
-    if (player.respawnTimer <= 0) {
-      respawnPlayer(state, player);
-    }
     return;
   }
 
@@ -376,6 +384,23 @@ function tryFireBullet(state, player) {
     radius: BULLET_RADIUS,
   });
   state.nextBulletId += 1;
+}
+
+function tryRespawn(state, player) {
+  if (player.isAlive) {
+    return;
+  }
+
+  if (player.respawnTimer > 0) {
+    return;
+  }
+
+  if (player.input.respawnNonce <= player.lastConsumedRespawnNonce) {
+    return;
+  }
+
+  player.lastConsumedRespawnNonce = player.input.respawnNonce;
+  respawnPlayer(state, player);
 }
 
 function updatePlayerMotion(state, player) {
@@ -884,6 +909,7 @@ export function addPlayer(state, { id, name, joinedAt = Date.now() }) {
     healthRegenCooldown: 0,
     isAlive: true,
     respawnTimer: 0,
+    shipId: DEFAULT_SHIP_ID,
     followActive: false,
     brakeActive: false,
     input: createDefaultInput(),
@@ -894,6 +920,7 @@ export function addPlayer(state, { id, name, joinedAt = Date.now() }) {
     lastConsumedBrakePressNonce: 0,
     lastConsumedBrakeReleaseNonce: 0,
     lastConsumedFireNonce: 0,
+    lastConsumedRespawnNonce: 0,
   };
 
   player.input.pointerX = spawn.x;
@@ -930,6 +957,9 @@ export function updatePlayerInput(state, playerId, input = {}, seq) {
   player.input.brakeReleaseNonce = Math.max(player.input.brakeReleaseNonce, Math.floor(toFiniteNumber(input.brakeReleaseNonce, player.input.brakeReleaseNonce)));
   player.input.dashNonce = Math.max(player.input.dashNonce, Math.floor(toFiniteNumber(input.dashNonce, player.input.dashNonce)));
   player.input.fireNonce = Math.max(player.input.fireNonce, Math.floor(toFiniteNumber(input.fireNonce, player.input.fireNonce)));
+  player.input.respawnNonce = Math.max(player.input.respawnNonce, Math.floor(toFiniteNumber(input.respawnNonce, player.input.respawnNonce)));
+  player.shipId = normalizeShipId(input.shipId, player.shipId);
+  player.input.shipId = player.shipId;
 
   if (Number.isFinite(seq)) {
     player.lastInputSeq = Number(seq);
@@ -946,6 +976,7 @@ export function tickGame(state) {
     applyControlPresses(player);
     updateResources(state, player);
     if (!player.isAlive) {
+      tryRespawn(state, player);
       applyControlReleases(player);
       continue;
     }
@@ -985,6 +1016,7 @@ export function createSnapshot(state) {
       health: player.health,
       isAlive: player.isAlive,
       respawnTimer: player.respawnTimer,
+      shipId: player.shipId,
       stamina: player.stamina,
       lastInputSeq: player.lastInputSeq,
     })),

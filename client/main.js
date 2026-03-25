@@ -1,5 +1,7 @@
 import {
+  AVAILABLE_SHIP_IDS,
   BULLET_RADIUS,
+  DEFAULT_SHIP_ID,
   MAX_HEALTH,
   MAX_STAMINA,
   PLAYER_COLLIDER_RADIUS,
@@ -32,6 +34,11 @@ const healthFillEl = document.querySelector("#health-fill");
 const healthValueEl = document.querySelector("#health-value");
 const staminaFillEl = document.querySelector("#stamina-fill");
 const staminaValueEl = document.querySelector("#stamina-value");
+const respawnScreenEl = document.querySelector("#respawn-screen");
+const respawnTimerEl = document.querySelector("#respawn-timer");
+const respawnStatusEl = document.querySelector("#respawn-status");
+const respawnButtonEl = document.querySelector("#respawn-button");
+const shipGridEl = document.querySelector("#ship-grid");
 
 const tpsSliderEl = document.querySelector("#tps-slider");
 const accelerationSliderEl = document.querySelector("#acceleration-slider");
@@ -98,10 +105,14 @@ const runtime = {
     brakeReleaseNonce: 0,
     dashNonce: 0,
     fireNonce: 0,
+    respawnNonce: 0,
+    shipId: DEFAULT_SHIP_ID,
   },
+  selectedShipId: DEFAULT_SHIP_ID,
   isRightMouseDown: false,
   isDashMouseDown: false,
   isBrakeHeld: false,
+  respawnQueued: false,
   nextInputSeq: 1,
   inputDirty: false,
   lastInputSentAt: 0,
@@ -113,6 +124,22 @@ function clamp(value, min, max) {
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
+}
+
+function formatShipLabel(shipId) {
+  return shipId.replace(/^ship/, "Ship ");
+}
+
+function getShipAssetPath(shipId) {
+  return `./${shipId}.png`;
+}
+
+function getLocalPlayer(snapshot = runtime.latestSnapshot) {
+  return snapshot?.players.find((entry) => entry.id === runtime.localPlayerId) || null;
+}
+
+function isRespawnScreenActive() {
+  return !respawnScreenEl.classList.contains("is-hidden");
 }
 
 function setHudVisible(nextVisible) {
@@ -127,6 +154,70 @@ function setColliderVisible(nextVisible) {
 
 function updateHudMode(text) {
   hudModeEl.textContent = text;
+}
+
+function syncSelectedShip(nextShipId) {
+  runtime.selectedShipId = AVAILABLE_SHIP_IDS.includes(nextShipId) ? nextShipId : DEFAULT_SHIP_ID;
+  runtime.input.shipId = runtime.selectedShipId;
+
+  for (const element of shipGridEl.querySelectorAll(".ship-option")) {
+    element.classList.toggle("is-selected", element.dataset.shipId === runtime.selectedShipId);
+  }
+}
+
+function buildShipPicker() {
+  shipGridEl.replaceChildren();
+
+  for (const shipId of AVAILABLE_SHIP_IDS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ship-option";
+    button.dataset.shipId = shipId;
+    button.innerHTML = `
+      <img src="${getShipAssetPath(shipId)}" alt="${formatShipLabel(shipId)}" />
+      <span class="ship-option__label">${formatShipLabel(shipId)}</span>
+    `;
+    button.addEventListener("click", () => {
+      syncSelectedShip(shipId);
+      markInputDirty();
+    });
+    shipGridEl.appendChild(button);
+  }
+
+  syncSelectedShip(runtime.selectedShipId);
+}
+
+function queueRespawn() {
+  const player = getLocalPlayer();
+  if (!player || player.isAlive || player.respawnTimer > 0) {
+    return;
+  }
+
+  runtime.respawnQueued = true;
+  runtime.input.shipId = runtime.selectedShipId;
+  runtime.input.respawnNonce += 1;
+  markInputDirty();
+}
+
+function updateRespawnOverlay(snapshot) {
+  const player = getLocalPlayer(runtime.latestSnapshot || snapshot);
+  if (!player || player.isAlive) {
+    respawnScreenEl.classList.add("is-hidden");
+    respawnStatusEl.textContent = "";
+    runtime.respawnQueued = false;
+    return;
+  }
+
+  respawnScreenEl.classList.remove("is-hidden");
+  syncSelectedShip(runtime.input.shipId || player.shipId || runtime.selectedShipId);
+
+  const secondsLeft = Math.max(0, player.respawnTimer || 0);
+  const isReady = secondsLeft <= 0;
+  respawnTimerEl.textContent = isReady ? "Respawn ready" : `Respawn in ${secondsLeft.toFixed(1)}s`;
+  respawnButtonEl.disabled = !isReady || runtime.respawnQueued;
+  respawnStatusEl.textContent = runtime.respawnQueued
+    ? "Respawn request sent..."
+    : (isReady ? "Choose a ship and jump back in." : "Choose your next ship while the timer counts down.");
 }
 
 function updateSceneLayout() {
@@ -247,7 +338,7 @@ function getRenderableSnapshot(now) {
 }
 
 function updateStaminaDisplay(snapshot) {
-  const player = snapshot?.players.find((entry) => entry.id === runtime.localPlayerId);
+  const player = getLocalPlayer(snapshot);
   const stamina = player?.stamina ?? MAX_STAMINA;
 
   runtime.displayedStamina += (stamina - runtime.displayedStamina) * 0.18;
@@ -260,7 +351,7 @@ function updateStaminaDisplay(snapshot) {
 }
 
 function updateHealthDisplay(snapshot) {
-  const player = snapshot?.players.find((entry) => entry.id === runtime.localPlayerId);
+  const player = getLocalPlayer(snapshot);
   const health = player?.health ?? MAX_HEALTH;
 
   runtime.displayedHealth += (health - runtime.displayedHealth) * 0.18;
@@ -272,18 +363,23 @@ function updateHealthDisplay(snapshot) {
   healthValueEl.textContent = `${health.toFixed(2)} / ${MAX_HEALTH.toFixed(2)}`;
 }
 
-function getOrCreatePlayerView(playerId) {
+function getOrCreatePlayerView(playerId, shipId = DEFAULT_SHIP_ID) {
   if (!playerViews.has(playerId)) {
     const element = document.createElement("img");
     element.className = "player";
-    element.src = "./ship1.png";
+    element.src = getShipAssetPath(shipId);
     element.alt = "ship";
     element.draggable = false;
     playersLayerEl.appendChild(element);
     playerViews.set(playerId, element);
   }
 
-  return playerViews.get(playerId);
+  const element = playerViews.get(playerId);
+  const expectedSrc = getShipAssetPath(shipId);
+  if (!element.src.endsWith(`/${shipId}.png`)) {
+    element.src = expectedSrc;
+  }
+  return element;
 }
 
 function getOrCreateCircleView(circleId, radius) {
@@ -326,7 +422,7 @@ function syncEntityViews(snapshot) {
     }
 
     activePlayerIds.add(player.id);
-    const element = getOrCreatePlayerView(player.id);
+    const element = getOrCreatePlayerView(player.id, player.shipId);
     const drawX = player.x - PLAYER_SIZE / 2;
     const drawY = player.y - PLAYER_SIZE / 2;
     element.classList.toggle("player--local", player.id === runtime.localPlayerId);
@@ -368,8 +464,7 @@ function syncEntityViews(snapshot) {
 }
 
 function updateStats(snapshot) {
-  const player = runtime.latestSnapshot?.players.find((entry) => entry.id === runtime.localPlayerId)
-    || snapshot?.players.find((entry) => entry.id === runtime.localPlayerId);
+  const player = getLocalPlayer(runtime.latestSnapshot) || getLocalPlayer(snapshot);
   const speed = player ? Math.hypot(player.vx, player.vy) * runtime.tickRate : 0;
   const lines = [
     `mode ${runtime.mode}`,
@@ -387,7 +482,7 @@ function updateStats(snapshot) {
 }
 
 function updateCollider(snapshot) {
-  const player = snapshot?.players.find((entry) => entry.id === runtime.localPlayerId);
+  const player = getLocalPlayer(snapshot);
   if (!player || !player.isAlive) {
     shipColliderEl.style.transform = "translate(-9999px, -9999px)";
     return;
@@ -409,6 +504,7 @@ function render(now) {
   updateCollider(snapshot);
   updateHealthDisplay(runtime.latestSnapshot || snapshot);
   updateStaminaDisplay(runtime.latestSnapshot || snapshot);
+  updateRespawnOverlay(snapshot);
   updateStats(snapshot);
 }
 
@@ -546,6 +642,8 @@ function initializeOfflineMode() {
   runtime.localSnapshotClock = performance.now();
 
   const initialSnapshot = createSnapshot(runtime.localGameState);
+  runtime.selectedShipId = getLocalPlayer(initialSnapshot)?.shipId || DEFAULT_SHIP_ID;
+  runtime.input.shipId = runtime.selectedShipId;
   runtime.tickRate = initialSnapshot.tickRate;
   runtime.tickDurationMs = 1000 / runtime.tickRate;
   setWorldSize(initialSnapshot.world.width, initialSnapshot.world.height);
@@ -594,6 +692,8 @@ async function initializeOnlineMode() {
       runtime.tickDurationMs = 1000 / runtime.tickRate;
       runtime.input.pointerX = message.player?.x ?? runtime.input.pointerX;
       runtime.input.pointerY = message.player?.y ?? runtime.input.pointerY;
+      runtime.selectedShipId = message.player?.shipId || DEFAULT_SHIP_ID;
+      runtime.input.shipId = runtime.selectedShipId;
       setWorldSize(message.world.width, message.world.height);
       applySliderState(message.tickRate, message.settings, true);
       pushSnapshot({
@@ -607,6 +707,10 @@ async function initializeOnlineMode() {
         }, performance.now());
     },
     onState: (message) => {
+      const localPlayer = message.players?.find((entry) => entry.id === runtime.localPlayerId);
+      if (localPlayer?.isAlive) {
+        runtime.respawnQueued = false;
+      }
       pushSnapshot(message, performance.now());
     },
     onClose: () => {
@@ -681,6 +785,10 @@ function handleSliderInput() {
 }
 
 function handleInputEvents() {
+  respawnButtonEl.addEventListener("click", () => {
+    queueRespawn();
+  });
+
   window.addEventListener("keydown", (event) => {
     if (event.code === "Tab") {
       setHudVisible(!runtime.isHudVisible);
@@ -697,6 +805,14 @@ function handleInputEvents() {
     if (event.code === "KeyO") {
       setColliderVisible(!runtime.showCollider);
       event.preventDefault();
+      return;
+    }
+
+    if (isRespawnScreenActive()) {
+      if ((event.code === "Enter" || event.code === "Space") && !respawnButtonEl.disabled) {
+        queueRespawn();
+        event.preventDefault();
+      }
       return;
     }
 
@@ -724,14 +840,25 @@ function handleInputEvents() {
   });
 
   windowEl.addEventListener("mousemove", (event) => {
+    if (isRespawnScreenActive()) {
+      return;
+    }
     updatePointer(event.clientX, event.clientY);
   });
 
   windowEl.addEventListener("mouseenter", (event) => {
+    if (isRespawnScreenActive()) {
+      return;
+    }
     updatePointer(event.clientX, event.clientY);
   });
 
   windowEl.addEventListener("mousedown", (event) => {
+    if (isRespawnScreenActive()) {
+      event.preventDefault();
+      return;
+    }
+
     if (event.button === 2 && !runtime.isRightMouseDown) {
       runtime.isRightMouseDown = true;
       updatePointer(event.clientX, event.clientY);
@@ -795,6 +922,7 @@ function handleInputEvents() {
 async function main() {
   setHudVisible(false);
   setColliderVisible(false);
+  buildShipPicker();
   handleSliderInput();
   handleInputEvents();
   updateSceneLayout();

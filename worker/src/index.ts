@@ -152,6 +152,7 @@ export class GameRoom implements DurableObject {
         id: player.id,
         x: player.x,
         y: player.y,
+        shipId: player.shipId,
       },
     });
     this.broadcastState();
