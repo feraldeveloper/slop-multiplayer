@@ -301,18 +301,32 @@
       letter-spacing: 0.03em;
     }
 
+    .resource__head--below {
+      margin-top: 10px;
+    }
+
     .resource__bar {
       margin-top: 10px;
       height: 56px;
       border-radius: 0;
       background: var(--stamina-track);
       overflow: hidden;
+      position: relative;
+    }
+
+    .resource__head + .resource__bar {
+      margin-top: 10px;
+    }
+
+    .resource__bar + .resource__head {
+      margin-top: 10px;
     }
 
     .resource__fill {
       display: block;
       width: 100%;
       height: 100%;
+      --fill-width: 100%;
     }
 
     .resource__bar--health {
@@ -321,12 +335,12 @@
 
     .resource__fill--health {
       background: var(--health-fill);
-      clip-path: polygon(0 0, 100% 62%, 100% 100%, 0 100%);
+      clip-path: polygon(0 0, var(--fill-width) 62%, var(--fill-width) 100%, 0 100%);
     }
 
     .resource__fill--stamina {
       background: var(--stamina-fill);
-      clip-path: polygon(0 0, 100% 0, 100% 24%, 0 100%);
+      clip-path: polygon(0 0, var(--fill-width) 0, var(--fill-width) 24%, 0 100%);
     }
 
     .control + .control {
@@ -498,12 +512,12 @@
       </div>
     </div>
     <div class="resource">
-      <div class="resource__head">
-        <span>Stamina</span>
-        <span id="stamina-value">12.00 / 12.00</span>
-      </div>
       <div class="resource__bar">
         <div class="resource__fill resource__fill--stamina" id="stamina-fill"></div>
+      </div>
+      <div class="resource__head resource__head--below">
+        <span>Stamina</span>
+        <span id="stamina-value">12.00 / 12.00</span>
       </div>
     </div>
   </aside>

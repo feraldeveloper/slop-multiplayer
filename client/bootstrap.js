@@ -1516,7 +1516,7 @@
       runtime.displayedStamina = stamina;
     }
 
-    staminaFillEl.style.width = `${(runtime.displayedStamina / MAX_STAMINA) * 100}%`;
+    staminaFillEl.style.setProperty("--fill-width", `${(runtime.displayedStamina / MAX_STAMINA) * 100}%`);
     staminaValueEl.textContent = `${stamina.toFixed(2)} / ${MAX_STAMINA.toFixed(2)}`;
   }
 
@@ -1529,7 +1529,7 @@
       runtime.displayedHealth = health;
     }
 
-    healthFillEl.style.width = `${(runtime.displayedHealth / MAX_HEALTH) * 100}%`;
+    healthFillEl.style.setProperty("--fill-width", `${(runtime.displayedHealth / MAX_HEALTH) * 100}%`);
     healthValueEl.textContent = `${health.toFixed(2)} / ${MAX_HEALTH.toFixed(2)}`;
   }
 
