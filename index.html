@@ -22,8 +22,15 @@
       --stamina-track: rgba(255, 255, 255, 0.12);
     }
 
-    * {
+    html {
+      font-family: "VCR OSD Mono", monospace;
+    }
+
+    *,
+    *::before,
+    *::after {
       box-sizing: border-box;
+      font-family: inherit;
     }
 
     body {
@@ -31,7 +38,7 @@
       min-height: 100vh;
       background: radial-gradient(circle at top, #102a5f 0%, var(--bg) 55%);
       overflow: hidden;
-      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      font-family: inherit;
     }
 
     .hud,
