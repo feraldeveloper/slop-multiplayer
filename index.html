@@ -303,7 +303,7 @@
 
     .resource__bar {
       margin-top: 10px;
-      height: 14px;
+      height: 56px;
       border-radius: 0;
       background: var(--stamina-track);
       overflow: hidden;
@@ -321,10 +321,12 @@
 
     .resource__fill--health {
       background: var(--health-fill);
+      clip-path: polygon(0 0, 100% 62%, 100% 100%, 0 100%);
     }
 
     .resource__fill--stamina {
       background: var(--stamina-fill);
+      clip-path: polygon(0 0, 100% 0, 100% 24%, 0 100%);
     }
 
     .control + .control {
