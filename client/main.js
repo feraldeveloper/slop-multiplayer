@@ -346,7 +346,7 @@ function updateStaminaDisplay(snapshot) {
     runtime.displayedStamina = stamina;
   }
 
-  staminaFillEl.style.transform = `scaleX(${runtime.displayedStamina / MAX_STAMINA})`;
+  staminaFillEl.style.width = `${(runtime.displayedStamina / MAX_STAMINA) * 100}%`;
   staminaValueEl.textContent = `${stamina.toFixed(2)} / ${MAX_STAMINA.toFixed(2)}`;
 }
 
@@ -359,7 +359,7 @@ function updateHealthDisplay(snapshot) {
     runtime.displayedHealth = health;
   }
 
-  healthFillEl.style.transform = `scaleX(${runtime.displayedHealth / MAX_HEALTH})`;
+  healthFillEl.style.width = `${(runtime.displayedHealth / MAX_HEALTH) * 100}%`;
   healthValueEl.textContent = `${health.toFixed(2)} / ${MAX_HEALTH.toFixed(2)}`;
 }
 

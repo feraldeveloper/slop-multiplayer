@@ -310,9 +310,9 @@
     }
 
     .resource__fill {
+      display: block;
       width: 100%;
       height: 100%;
-      transform-origin: left center;
     }
 
     .resource__bar--health {
@@ -320,11 +320,11 @@
     }
 
     .resource__fill--health {
-      background: linear-gradient(90deg, #8f8f8f 0%, var(--health-fill) 100%);
+      background: var(--health-fill);
     }
 
     .resource__fill--stamina {
-      background: linear-gradient(90deg, #6f6f6f 0%, var(--stamina-fill) 100%);
+      background: var(--stamina-fill);
     }
 
     .control + .control {
